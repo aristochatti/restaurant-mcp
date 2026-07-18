@@ -149,6 +149,7 @@ async def test_tool_call_returns_ui_resource(client, monkeypatch):
     ui = content[0]
     assert ui["type"] == "resource"
     assert ui["resource"]["uri"].startswith("ui://restaurants/")
+    # The mimeType should be text/html
     assert ui["resource"]["mimeType"] == "text/html"
     assert "Where to eat in Rome" in ui["resource"]["text"]
     assert "Trattoria Da Enzo" in ui["resource"]["text"]
@@ -159,3 +160,59 @@ async def test_public_host_is_accepted_not_421(client):
     would 421 every request once deployed behind Alpic's public domain."""
     res = await rpc(client, "initialize", INIT_PARAMS)
     assert res.status_code != 421, "public Host header must not be rejected"
+
+
+async def test_tools_list_exposes_get_maps_list_with_its_input_schema(client):
+    await rpc(client, "initialize", INIT_PARAMS)
+    res = await rpc(client, "tools/list", {}, id=2)
+
+    body = read_rpc(res)
+    assert "error" not in body
+
+    tools = body["result"]["tools"]
+    tool = next((t for t in tools if t["name"] == "get_maps_list"), None)
+    assert tool, f"get_maps_list missing from: {[t['name'] for t in tools]}"
+    assert "shared list" in tool["description"].lower()
+    assert "url" in tool["inputSchema"]["required"]
+    assert tool["inputSchema"]["properties"]["url"]["type"] == "string"
+
+
+async def test_get_maps_list_tool_call(client, monkeypatch):
+    def fake_fetch_from_list(url, enrich=False):
+        return [
+            {
+                "placeId": "p1",
+                "name": "Test Place",
+                "address": "Test Address",
+                "rating": 4.5,
+                "userRatingsTotal": 100,
+                "priceLevel": 2,
+                "openNow": True,
+                "photoUrl": None,
+            }
+        ]
+
+    monkeypatch.setattr(server, "fetch_from_list", fake_fetch_from_list)
+
+    res = await rpc(
+        client,
+        "tools/call",
+        {
+            "name": "get_maps_list",
+            "arguments": {
+                "url": "https://maps.app.goo.gl/some-list"
+            }
+        },
+        id=4
+    )
+    body = read_rpc(res)
+    assert "error" not in body
+
+    content = body["result"]["content"]
+    assert len(content) == 1
+    ui = content[0]
+    assert ui["type"] == "resource"
+    assert ui["resource"]["mimeType"] == "text/html"
+    assert "Test Place" in ui["resource"]["text"]
+
+

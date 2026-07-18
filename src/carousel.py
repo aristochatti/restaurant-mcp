@@ -7,13 +7,11 @@ so it renders identically in Le Chat, Claude, and any mcp-ui host.
 
 FEATURES:
 - Basic view: name, photo, location, rating, price, open/closed status
-- Booking: External link to Google Maps or restaurant website
 - TODO: Expanded view with hours, menu, direct booking (future enhancement)
 """
 
 from html import escape
 from typing import Any
-from urllib.parse import quote, urlencode
 
 _STYLE = """
   :root { color-scheme: light; }
@@ -58,34 +56,35 @@ def _esc(value: Any) -> str:
     return escape("", quote=True) if value is None else escape(str(value), quote=True)
 
 
+def _esc_url(value: Any) -> str:
+    """Escape URL for HTML attribute, but don't escape base64 data URLs."""
+    if not value:
+        return ""
+    
+    url_str = str(value)
+    # If it's a data URL (base64 encoded), don't escape the data part
+    if url_str.startswith("data:"):
+        # Split into the data URL prefix and the actual data
+        # Format: data:[<mediatype>][;base64],<data>
+        parts = url_str.split(",", 1)
+        if len(parts) == 2:
+            # Escape the prefix (before comma) and leave data as-is
+            return escape(parts[0], quote=True) + "," + parts[1]
+    
+    # For regular URLs, use normal escaping
+    return escape(url_str, quote=True)
+
+
 def _stars(rating: float | None) -> str:
     if not rating:
         return ""
     full = round(rating)
-    out = "".join("★" if i <= full else "☆" for i in range(1, 6))
+    out = "".join("[33m★[0m" if i <= full else "★" for i in range(1, 6))
     return f'<span class="stars">{out}</span><span class="rnum">{rating:.1f}</span>'
 
 
-def _get_booking_url(r: dict[str, Any]) -> str:
-    """
-    Get booking URL for a restaurant.
-    Priority: websiteUrl > placeId (Google Maps) > name+address search
-    TODO: Future 4th tool will handle direct booking API integration
-    """
-    # 1. If websiteUrl is provided (from enriched list data), use it directly
-    if r.get("websiteUrl"):
-        return r["websiteUrl"]
-    
-    # 2. If placeId exists, use Google Maps deep link
-    if r.get("placeId"):
-        return f"https://www.google.com/maps/place/?q=place_id:{quote(str(r['placeId']), safe='')}"
-    
-    # 3. Fallback: search query
-    query = f"{r.get('name', '')} {r.get('address') or ''}"
-    return "https://www.google.com/maps/search/?" + urlencode({"api": 1, "query": query})
 
-
-def _card(r: dict[str, Any], base_url: str = "") -> str:
+def _card(r: dict[str, Any]) -> str:
     """
     Render a single restaurant card.
     
@@ -96,7 +95,6 @@ def _card(r: dict[str, Any], base_url: str = "") -> str:
     - Rating
     - Price level
     - Open/closed status
-    - Booking link (external)
     
     TODO: Expanded view (click to show):
     - Hours
@@ -105,24 +103,8 @@ def _card(r: dict[str, Any], base_url: str = "") -> str:
     """
     photo_url = r.get("photoUrl")
     if photo_url:
-        # Check if this is a Google photo URL that needs CORS proxying
-        # Google photo URLs typically contain googleusercontent or places.googleapis.com
-        is_google_url = "googleusercontent" in photo_url or "places.googleapis.com" in photo_url or "maps.googleapis.com" in photo_url
-        
-        if is_google_url and base_url:
-            # Route through our proxy endpoint to handle CORS
-            # Construct absolute URL: base_url/proxy-image?url=ENCODED_URL
-            from urllib.parse import quote
-            proxied_url = f"{base_url.rstrip('/')}/proxy-image?url={quote(photo_url, safe='')}"
-            img = f'<div class="photo"><img src="{_esc(proxied_url)}" alt="{_esc(r.get("name", ""))}" onerror="this.parentElement.className=\'photo ph\';this.remove()"></div>'
-        elif is_google_url:
-            # Fallback: relative path (may not work in all clients)
-            from urllib.parse import quote
-            proxied_url = f"/proxy-image?url={quote(photo_url, safe='')}"
-            img = f'<div class="photo"><img src="{_esc(proxied_url)}" alt="{_esc(r.get("name", ""))}" onerror="this.parentElement.className=\'photo ph\';this.remove()"></div>'
-        else:
-            # For non-Google URLs, try direct with crossorigin
-            img = f'<div class="photo"><img src="{_esc(photo_url)}" alt="{_esc(r.get("name", ""))}" crossorigin="anonymous" onerror="this.parentElement.className=\'photo ph\';this.remove()"></div>'
+        # Use img tag with crossorigin for better CORS handling
+        img = f'<div class="photo"><img src="{_esc_url(photo_url)}" alt="Restaurant photo" onerror="this.style.display=\'none\'"></div>'
     else:
         img = '<div class="photo ph">🍽️</div>'
 
@@ -141,9 +123,6 @@ def _card(r: dict[str, Any], base_url: str = "") -> str:
     count = f'<span class="cnt">({total})</span>' if total else ""
     price_span = f'<span class="price">{price}</span>' if price else ""
 
-    # Get booking URL (supports websiteUrl for direct links)
-    booking_url = _get_booking_url(r)
-
     return f"""
   <div class="card">
     {img}
@@ -156,13 +135,12 @@ def _card(r: dict[str, Any], base_url: str = "") -> str:
       <div class="rrow">{_stars(r.get("rating"))}{count}</div>
       <div class="actions">
         {tag}
-        <a class="book" href="{_esc(booking_url)}" target="_blank" rel="noopener">View &amp; book ↗</a>
       </div>
     </div>
   </div>"""
 
 
-def build_carousel_html(location: str, restaurants: list[dict[str, Any]], base_url: str = "") -> str:
+def build_carousel_html(location: str, restaurants: list[dict[str, Any]]) -> str:
     """
     Build complete carousel HTML from a list of restaurants.
     
@@ -177,13 +155,11 @@ def build_carousel_html(location: str, restaurants: list[dict[str, Any]], base_u
             - openNow: Boolean for open/closed tag
             - photoUrl: URL for restaurant photo
             - placeId: Google Places ID (for deep links)
-            - websiteUrl: Direct website URL (optional, for booking)
-        base_url: Base URL for the MCP server (e.g., "http://localhost:8001") for proxying images
     
     Returns:
         Complete HTML string for mcp-ui rendering
     """
-    cards = "".join(_card(r, base_url) for r in restaurants)
+    cards = "".join(_card(r) for r in restaurants)
     header_note = f"{len(restaurants)} places · scroll to browse →"
     
     return f"""<!doctype html><html><head><meta charset="utf-8"/>
