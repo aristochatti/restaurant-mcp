@@ -1,7 +1,14 @@
-"""Builds a self-contained HTML carousel string from a list of restaurants.
+"""Module 3: Visualizer - Carousel HTML Renderer
+
+Builds a self-contained HTML carousel string from a list of restaurants.
 
 Returned to the host as an mcp-ui rawHtml resource — no external JS/CSS deps,
 so it renders identically in Le Chat, Claude, and any mcp-ui host.
+
+FEATURES:
+- Basic view: name, photo, location, rating, price, open/closed status
+- Booking: External link to Google Maps or restaurant website
+- TODO: Expanded view with hours, menu, direct booking (future enhancement)
 """
 
 from html import escape
@@ -21,8 +28,8 @@ _STYLE = """
   .track::-webkit-scrollbar { height:8px; }
   .track::-webkit-scrollbar-thumb { background:#d6d3d1; border-radius:4px; }
   .card { flex:0 0 260px; scroll-snap-align:start; background:#fff; border-radius:16px;
-          box-shadow:0 4px 16px rgba(0,0,0,.08); overflow:hidden; display:flex; flex-direction:column; }
-  .photo { height:150px; background-size:cover; background-position:center; overflow:hidden; }
+          box-shadow:0 4px 16px rgba(0,0,0,.08); overflow:hidden; display:flex; flex-direction:column; cursor:pointer; }
+  .photo { height:150px; background-size:cover; background-position:center; overflow:hidden; position:relative; }
   .photo img { width:100%; height:100%; object-fit:cover; display:block; }
   .photo.ph { display:flex; align-items:center; justify-content:center; font-size:48px;
               background:linear-gradient(135deg,#059669,#065f46); }
@@ -48,7 +55,7 @@ _STYLE = """
 
 def _esc(value: Any) -> str:
     """HTML-escape, matching the JS original's handling of None as empty."""
-    return escape("" if value is None else str(value), quote=True)
+    return escape("", quote=True) if value is None else escape(str(value), quote=True)
 
 
 def _stars(rating: float | None) -> str:
@@ -59,22 +66,52 @@ def _stars(rating: float | None) -> str:
     return f'<span class="stars">{out}</span><span class="rnum">{rating:.1f}</span>'
 
 
+def _get_booking_url(r: dict[str, Any]) -> str:
+    """
+    Get booking URL for a restaurant.
+    Priority: websiteUrl > placeId (Google Maps) > name+address search
+    TODO: Future 4th tool will handle direct booking API integration
+    """
+    # 1. If websiteUrl is provided (from enriched list data), use it directly
+    if r.get("websiteUrl"):
+        return r["websiteUrl"]
+    
+    # 2. If placeId exists, use Google Maps deep link
+    if r.get("placeId"):
+        return f"https://www.google.com/maps/place/?q=place_id:{quote(str(r['placeId']), safe='')}"
+    
+    # 3. Fallback: search query
+    query = f"{r.get('name', '')} {r.get('address') or ''}"
+    return "https://www.google.com/maps/search/?" + urlencode({"api": 1, "query": query})
+
+
 def _card(r: dict[str, Any]) -> str:
+    """
+    Render a single restaurant card.
+    
+    Basic view (always shown):
+    - Photo
+    - Name
+    - Address
+    - Rating
+    - Price level
+    - Open/closed status
+    - Booking link (external)
+    
+    TODO: Expanded view (click to show):
+    - Hours
+    - Menu
+    - Direct booking
+    """
     photo_url = r.get("photoUrl")
     if photo_url:
-        # Use img tag with crossorigin for better CORS handling
-        img = f'<div class="photo"><img src="{_esc(photo_url)}" alt="Restaurant photo" crossorigin="anonymous" onerror="this.style.display=\'none\'"></div>'
+        # Use img tag with crossorigin and fallback for CORS/Mistral rendering issues
+        img = f'<div class="photo"><img src="{_esc(photo_url)}" alt="{_esc(r.get("name", ""))}" crossorigin="anonymous" onerror="this.parentElement.className=\'photo ph\';this.remove()"></div>'
     else:
         img = '<div class="photo ph">🍽️</div>'
 
     price_level = r.get("priceLevel")
     price = "€" * price_level if price_level else ""
-
-    if r.get("placeId"):
-        maps_url = f"https://www.google.com/maps/place/?q=place_id:{quote(str(r['placeId']), safe='')}"
-    else:
-        query = f"{r.get('name', '')} {r.get('address') or ''}"
-        maps_url = "https://www.google.com/maps/search/?" + urlencode({"api": 1, "query": query})
 
     open_now = r.get("openNow")
     if open_now is True:
@@ -88,6 +125,9 @@ def _card(r: dict[str, Any]) -> str:
     count = f'<span class="cnt">({total})</span>' if total else ""
     price_span = f'<span class="price">{price}</span>' if price else ""
 
+    # Get booking URL (supports websiteUrl for direct links)
+    booking_url = _get_booking_url(r)
+
     return f"""
   <div class="card">
     {img}
@@ -100,14 +140,35 @@ def _card(r: dict[str, Any]) -> str:
       <div class="rrow">{_stars(r.get("rating"))}{count}</div>
       <div class="actions">
         {tag}
-        <a class="book" href="{_esc(maps_url)}" target="_blank" rel="noopener">View &amp; book ↗</a>
+        <a class="book" href="{_esc(booking_url)}" target="_blank" rel="noopener">View &amp; book ↗</a>
       </div>
     </div>
   </div>"""
 
 
 def build_carousel_html(location: str, restaurants: list[dict[str, Any]]) -> str:
+    """
+    Build complete carousel HTML from a list of restaurants.
+    
+    Args:
+        location: The location/title to display in the header
+        restaurants: List of restaurant dicts with:
+            - name: Restaurant name
+            - address: Full address
+            - rating: Float rating (1-5)
+            - userRatingsTotal: Number of ratings
+            - priceLevel: Integer (1-4) for € symbols
+            - openNow: Boolean for open/closed tag
+            - photoUrl: URL for restaurant photo
+            - placeId: Google Places ID (for deep links)
+            - websiteUrl: Direct website URL (optional, for booking)
+    
+    Returns:
+        Complete HTML string for mcp-ui rendering
+    """
     cards = "".join(_card(r) for r in restaurants)
+    header_note = f"{len(restaurants)} places · scroll to browse →"
+    
     return f"""<!doctype html><html><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <style>{_STYLE}</style></head>
@@ -115,7 +176,7 @@ def build_carousel_html(location: str, restaurants: list[dict[str, Any]]) -> str
   <div class="head">
     <p class="eyebrow">Restaurants near you</p>
     <h2>Where to eat in {_esc(location)}</h2>
-    <p class="sub">{len(restaurants)} places · scroll to browse →</p>
+    <p class="sub">{header_note}</p>
   </div>
   <div class="track">{cards}</div>
 </div></body></html>"""

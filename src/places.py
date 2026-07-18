@@ -21,6 +21,7 @@ _FIELD_MASK = ",".join(
         "places.priceLevel",
         "places.currentOpeningHours.openNow",
         "places.photos",
+        "places.websiteUri",  # For direct booking links
     ]
 )
 
@@ -78,6 +79,10 @@ def _to_restaurant(p: dict[str, Any], key: str) -> dict[str, Any]:
         else None
     )
 
+    # Extract website URI for direct booking links
+    website_uri = (p.get("websiteUri") or "").strip()
+    website_url = website_uri if website_uri and website_uri.startswith("http") else None
+    
     return {
         "placeId": p.get("id"),
         "name": (p.get("displayName") or {}).get("text") or "Unnamed",
@@ -87,4 +92,5 @@ def _to_restaurant(p: dict[str, Any], key: str) -> dict[str, Any]:
         "priceLevel": _PRICE_MAP.get(p.get("priceLevel")),
         "openNow": (p.get("currentOpeningHours") or {}).get("openNow"),
         "photoUrl": photo_url,
+        "websiteUrl": website_url,  # For direct booking links
     }

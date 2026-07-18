@@ -1,11 +1,16 @@
 import functools
 import json
+import sys
+from pathlib import Path
 
 import httpx
 import pytest
 
-from resto_mcp import places
-from resto_mcp.places import search_restaurants
+# Add src directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+import places
+from places import search_restaurants
 
 
 @pytest.fixture(autouse=True)
@@ -64,7 +69,12 @@ async def test_maps_a_places_response_into_the_carousels_restaurant_shape(stub_p
     assert r["userRatingsTotal"] == 900
     assert r["priceLevel"] == 3
     assert r["openNow"] is True
-    assert "places/place-1/photos/xyz/media?maxWidthPx=500" in r["photoUrl"]
+    # Photo URL now uses proxy endpoint to avoid CORS issues
+    assert "/proxy-image?url=" in r["photoUrl"]
+    # The URL is URL-encoded, so check for encoded version
+    assert "places%2Fplace-1%2Fphotos%2Fxyz%2Fmedia" in r["photoUrl"] or "places/place-1/photos/xyz/media" in r["photoUrl"]
+    # Website URL should be None when not in response
+    assert r.get("websiteUrl") is None
 
 
 async def test_fills_in_defaults_for_sparse_places(stub_places):
@@ -77,6 +87,7 @@ async def test_fills_in_defaults_for_sparse_places(stub_places):
     assert r["rating"] is None
     assert r["priceLevel"] is None
     assert r["photoUrl"] is None
+    assert r.get("websiteUrl") is None
 
 
 async def test_returns_an_empty_list_when_places_returns_no_results(stub_places):

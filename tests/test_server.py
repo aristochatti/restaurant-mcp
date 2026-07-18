@@ -1,11 +1,16 @@
 import json
+import sys
+from pathlib import Path
 
 import httpx
 import pytest
 from asgi_lifespan import LifespanManager
 
-from resto_mcp import server
-from resto_mcp.server import app
+# Add src directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from server import app
+import server
 
 MCP_HEADERS = {
     "Content-Type": "application/json",
@@ -55,7 +60,9 @@ async def rpc(client: httpx.AsyncClient, method: str, params: dict, id: int = 1)
 async def test_health_endpoint_responds(client):
     res = await client.get("/health")
     assert res.status_code == 200
-    assert res.json() == {"ok": True}
+    data = res.json()
+    assert data["ok"] is True
+    assert "extraction_available" in data
 
 
 async def test_root_endpoint_advertises_the_mcp_path(client):
@@ -110,7 +117,7 @@ async def test_malformed_json_body_does_not_crash_the_server(client):
     assert health.status_code == 200
 
 
-async def test_tool_call_returns_a_ui_resource_and_a_text_fallback(client, monkeypatch):
+async def test_tool_call_returns_ui_resource(client, monkeypatch):
     async def fake_search(location, limit):
         return [
             {
@@ -137,15 +144,14 @@ async def test_tool_call_returns_a_ui_resource_and_a_text_fallback(client, monke
     assert "error" not in body, body
 
     content = body["result"]["content"]
-    ui = next(c for c in content if c["type"] == "resource")
+    assert len(content) == 1, "Should return only UI resource, no text fallback"
+    
+    ui = content[0]
+    assert ui["type"] == "resource"
     assert ui["resource"]["uri"].startswith("ui://restaurants/")
     assert ui["resource"]["mimeType"] == "text/html"
     assert "Where to eat in Rome" in ui["resource"]["text"]
     assert "Trattoria Da Enzo" in ui["resource"]["text"]
-
-    text = next(c for c in content if c["type"] == "text")
-    assert "Found 1 restaurants in Rome" in text["text"]
-    assert "1. Trattoria Da Enzo · ★4.5 · €€ — Via dei Vascellari 29, Roma" in text["text"]
 
 
 async def test_public_host_is_accepted_not_421(client):
