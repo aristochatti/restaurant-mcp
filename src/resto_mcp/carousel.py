@@ -51,11 +51,30 @@ def _esc(value: Any) -> str:
     return escape("" if value is None else str(value), quote=True)
 
 
+def _esc_url(value: Any) -> str:
+    """Escape URL for HTML attribute, but don't escape base64 data URLs."""
+    if not value:
+        return ""
+    
+    url_str = str(value)
+    # If it's a data URL (base64 encoded), don't escape the data part
+    if url_str.startswith("data:"):
+        # Split into the data URL prefix and the actual data
+        # Format: data:[<mediatype>][;base64],<data>
+        parts = url_str.split(",", 1)
+        if len(parts) == 2:
+            # Escape the prefix (before comma) and leave data as-is
+            return escape(parts[0], quote=True) + "," + parts[1]
+    
+    # For regular URLs, use normal escaping
+    return escape(url_str, quote=True)
+
+
 def _stars(rating: float | None) -> str:
     if not rating:
         return ""
     full = round(rating)
-    out = "".join("★" if i <= full else "☆" for i in range(1, 6))
+    out = "".join("[33m★[0m" if i <= full else "★" for i in range(1, 6))
     return f'<span class="stars">{out}</span><span class="rnum">{rating:.1f}</span>'
 
 
@@ -63,7 +82,7 @@ def _card(r: dict[str, Any]) -> str:
     photo_url = r.get("photoUrl")
     if photo_url:
         # Use img tag with crossorigin for better CORS handling
-        img = f'<div class="photo"><img src="{_esc(photo_url)}" alt="Restaurant photo" crossorigin="anonymous" onerror="this.style.display=\'none\'"></div>'
+        img = f'<div class="photo"><img src="{_esc_url(photo_url)}" alt="Restaurant photo" onerror="this.style.display=\'none\'"></div>'
     else:
         img = '<div class="photo ph">🍽️</div>'
 

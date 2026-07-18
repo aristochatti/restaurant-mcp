@@ -55,7 +55,7 @@ async def test_maps_a_places_response_into_the_carousels_restaurant_shape(stub_p
         },
     )
 
-    (r,) = await search_restaurants("Rome", 5)
+    (r,) = await search_restaurants("Rome", 5, fetch_images=False)
 
     assert r["placeId"] == "place-1"
     assert r["name"] == "Osteria Fernanda"
@@ -64,13 +64,15 @@ async def test_maps_a_places_response_into_the_carousels_restaurant_shape(stub_p
     assert r["userRatingsTotal"] == 900
     assert r["priceLevel"] == 3
     assert r["openNow"] is True
-    assert "places%2Fplace-1%2Fphotos%2Fxyz%2Fmedia%3FmaxWidthPx%3D500" in r["photoUrl"]
+    assert "places.googleapis.com/v1/places/place-1/photos/xyz/media" in r["photoUrl"]
+    assert "maxWidthPx=500" in r["photoUrl"]
+    assert "key=test-key" in r["photoUrl"]
 
 
 async def test_fills_in_defaults_for_sparse_places(stub_places):
     stub_places(200, {"places": [{"id": "place-2"}]})
 
-    (r,) = await search_restaurants("Rome")
+    (r,) = await search_restaurants("Rome", fetch_images=False)
 
     assert r["name"] == "Unnamed"
     assert r["address"] == ""
@@ -81,13 +83,13 @@ async def test_fills_in_defaults_for_sparse_places(stub_places):
 
 async def test_returns_an_empty_list_when_places_returns_no_results(stub_places):
     stub_places(200, {})
-    assert await search_restaurants("Atlantis") == []
+    assert await search_restaurants("Atlantis", fetch_images=False) == []
 
 
 async def test_caps_max_result_count_at_20_and_scopes_the_query_to_restaurants(stub_places):
     calls = stub_places(200, {"places": []})
 
-    await search_restaurants("Tokyo", 50)
+    await search_restaurants("Tokyo", 50, fetch_images=False)
 
     body = json.loads(calls[0].content)
     assert body["maxResultCount"] == 20
@@ -100,11 +102,11 @@ async def test_raises_with_the_api_status_when_places_rejects_the_request(stub_p
     stub_places(403, None, text="PERMISSION_DENIED: Places API is not enabled")
 
     with pytest.raises(RuntimeError, match=r"Places API 403.*PERMISSION_DENIED"):
-        await search_restaurants("Rome")
+        await search_restaurants("Rome", fetch_images=False)
 
 
 async def test_raises_when_the_api_key_is_missing(monkeypatch):
     monkeypatch.delenv("GOOGLE_MAPS_API_KEY", raising=False)
 
     with pytest.raises(RuntimeError, match="GOOGLE_MAPS_API_KEY is not set"):
-        await search_restaurants("Rome")
+        await search_restaurants("Rome", fetch_images=False)
