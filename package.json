@@ -1,0 +1,20 @@
+{
+  "name": "resto-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that searches restaurants via Google Places and returns an interactive mcp-ui carousel.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@mcp-ui/server": "^5.0.0",
+    "express": "^4.19.2",
+    "zod": "^3.23.8"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
