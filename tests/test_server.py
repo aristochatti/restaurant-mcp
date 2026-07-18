@@ -2,10 +2,8 @@ import json
 
 import httpx
 import pytest
-from asgi_lifespan import LifespanManager
 
 from resto_mcp import server
-from resto_mcp.server import app
 
 MCP_HEADERS = {
     "Content-Type": "application/json",
@@ -19,37 +17,7 @@ INIT_PARAMS = {
 }
 
 
-@pytest.fixture(scope="session")
-async def client():
-    """Drive the real ASGI app, lifespan included, the way Alpic's proxy does.
-
-    Session-scoped because the MCP session manager refuses to start twice, and
-    driven by LifespanManager so startup/shutdown happen in one task — entering
-    the lifespan context directly trips anyio's cancel-scope task check.
-    """
-    async with LifespanManager(app):
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://resto-mcp.example.com", timeout=10
-        ) as c:
-            yield c
-
-
-def read_rpc(res: httpx.Response) -> dict:
-    """The transport may answer as JSON or as an SSE stream; accept either."""
-    if "text/event-stream" in res.headers.get("content-type", ""):
-        line = next((ln for ln in res.text.splitlines() if ln.startswith("data:")), None)
-        assert line, f"no SSE data frame in: {res.text[:200]}"
-        return json.loads(line[5:].strip())
-    return res.json()
-
-
-async def rpc(client: httpx.AsyncClient, method: str, params: dict, id: int = 1):
-    return await client.post(
-        "/mcp",
-        headers=MCP_HEADERS,
-        content=json.dumps({"jsonrpc": "2.0", "id": id, "method": method, "params": params}),
-    )
+from conftest import rpc, read_rpc, INIT_PARAMS  # noqa: F401 – re-exported for readability
 
 
 async def test_health_endpoint_responds(client):
@@ -256,5 +224,22 @@ async def test_get_maps_list_tool_call(client, monkeypatch):
     data = json.loads(text["text"])
     assert data["title"] == "Test List"
     assert data["places"][0]["name"] == "Test Place"
+
+
+async def test_server_advertises_logo_icon(client):
+    res = await rpc(client, "initialize", INIT_PARAMS)
+    body = read_rpc(res)
+    assert "error" not in body
+    server_info = body["result"]["serverInfo"]
+    assert "icons" in server_info
+    assert server_info["icons"][0]["src"] == "/logo.png"
+    assert server_info["icons"][0]["mimeType"] == "image/png"
+
+
+async def test_logo_endpoint_serves_image(client):
+    res = await client.get("/logo.png")
+    assert res.status_code == 200
+    assert res.headers["content-type"] == "image/png"
+    assert len(res.content) > 0
 
 

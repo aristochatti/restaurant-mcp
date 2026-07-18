@@ -5,14 +5,15 @@ import httpx
 import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import ContentBlock, EmbeddedResource, TextContent, TextResourceContents
+from mcp.types import ContentBlock, EmbeddedResource, TextContent, TextResourceContents, Icon
 from pydantic import AnyUrl, Field
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse, Response
+from starlette.responses import JSONResponse, PlainTextResponse, Response, FileResponse
 
 from .carousel import build_carousel_html
 from .places import search_restaurants
 from .booking import investigate_restaurant_booking
+from .phone_booking import initiate_booking_call
 
 import sys
 from pathlib import Path
@@ -45,6 +46,12 @@ mcp = FastMCP(
     stateless_http=True,
     streamable_http_path="/mcp",
     transport_security=_transport_security(),
+    icons=[
+        Icon(
+            src="/logo.png",
+            mimeType="image/png"
+        )
+    ]
 )
 
 
@@ -218,6 +225,97 @@ def get_maps_list_tool(
         return json.dumps(parsed_data, indent=2)
     except Exception as e:
         return f"Error extracting maps list: {str(e)}"
+
+
+@mcp.tool(
+    name="call_restaurant_for_booking",
+    title="Call Restaurant for Booking",
+    description=(
+        "Places an AI-powered outbound phone call to a restaurant using ElevenLabs "
+        "Conversational AI to make a reservation on behalf of the user. "
+        "The AI agent speaks to the restaurant staff and books a table autonomously. "
+        "Requires ELEVENLABS_API_KEY, ELEVENLABS_AGENT_ID, and ELEVENLABS_PHONE_NUMBER_ID "
+        "environment variables to be configured."
+    ),
+)
+def call_restaurant_for_booking(
+    restaurant_name: Annotated[
+        str,
+        Field(description="Name of the restaurant to call"),
+    ],
+    phone_number: Annotated[
+        str,
+        Field(description="Restaurant phone number in E.164 format (e.g. +33123456789) or local format"),
+    ],
+    guest_name: Annotated[
+        str,
+        Field(description="Full name of the guest for the reservation"),
+    ],
+    date: Annotated[
+        str,
+        Field(description="Reservation date (e.g. '2026-07-20', 'today', 'tomorrow')"),
+    ],
+    time_start: Annotated[
+        str,
+        Field(description="Preferred reservation time (e.g. '19:30')"),
+    ],
+    pax: Annotated[
+        int,
+        Field(description="Number of guests (party size)", ge=1, le=50),
+    ],
+    time_end: Annotated[
+        str | None,
+        Field(description="Latest acceptable time if preferred slot is unavailable (e.g. '21:00'). Defaults to 1.5h after time_start."),
+    ] = None,
+    special_requests: Annotated[
+        str | None,
+        Field(description="Any dietary requirements or special requests (e.g. 'window table', 'gluten-free menu')"),
+    ] = None,
+) -> str:
+    # Default time_end to 1.5 hours after time_start if not provided
+    if not time_end:
+        try:
+            from datetime import datetime, timedelta
+            t = datetime.strptime(time_start, "%H:%M")
+            time_end = (t + timedelta(hours=1, minutes=30)).strftime("%H:%M")
+        except ValueError:
+            time_end = time_start
+
+    import time
+    called_at = time.time()
+
+    result = initiate_booking_call(
+        restaurant_name=restaurant_name,
+        phone_number=phone_number,
+        guest_name=guest_name,
+        date=date,
+        time_start=time_start,
+        time_end=time_end,
+        pax=pax,
+        special_requests=special_requests or "",
+    )
+
+    if result.get("success"):
+        agent_id = os.environ.get("ELEVENLABS_AGENT_ID")
+        if agent_id:
+            from .phone_booking import wait_for_conversation_summary
+            # Wait for call to complete and get the post-call transcript/summary (up to 5 mins)
+            summary_result = wait_for_conversation_summary(
+                agent_id=agent_id,
+                called_at_epoch=called_at,
+                poll_interval=5,
+                max_wait=300
+            )
+            result["post_call_analysis"] = summary_result
+
+    import json
+    return json.dumps(result, indent=2)
+
+
+@mcp.custom_route("/logo.png", methods=["GET"])
+async def get_logo(_request: Request) -> FileResponse:
+    logo_path = Path(__file__).resolve().parent.parent.parent / "assets" / "logo.png"
+    return FileResponse(logo_path, media_type="image/png")
 
 
 @mcp.custom_route("/", methods=["GET"])
