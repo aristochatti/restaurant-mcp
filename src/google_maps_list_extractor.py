@@ -16,7 +16,7 @@ parent_dir = os.path.dirname(script_dir)
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-from extract_list import resolve_list_id, fetch_list_data, parse_places
+from extract_list import resolve_list_id, fetch_list_data, parse_places, adaptive_fetch_and_parse
 
 
 def format_markdown(list_data):
@@ -68,6 +68,8 @@ def main():
     parser.add_argument("-e", "--enrich", action="store_true", default=False, help="Pull additional details (price levels, ranges, photos) from Google Places API (default: False).")
     parser.add_argument("-u", "--user-location", help="User coordinates ('lat,lon') or location/address string to sort results by increasing distance.")
     parser.add_argument("-n", "--top-n", type=int, help="Filter and return only the top N closest results. If -enrich is set, only these N will be enriched.")
+    parser.add_argument("-r", "--radius", type=float, metavar="KM",
+                        help="Radius filter in km. Only places within this distance from --user-location are returned, before --top-n is applied. Useful for large lists (500+ items).")
     
     args = parser.parse_args()
     
@@ -93,24 +95,40 @@ def main():
         print("Error: Could not resolve a Google Maps list ID from the provided URL.", file=sys.stderr)
         sys.exit(1)
         
-    print(f"Found List ID: {list_id}", file=sys.stderr)
-    print(f"Fetching place data...", file=sys.stderr)
-    raw_data = fetch_list_data(list_id, limit=args.limit)
-    if not raw_data:
-        print("Error: Failed to fetch list content.", file=sys.stderr)
-        sys.exit(1)
-        
     print(f"Parsing places...", file=sys.stderr)
-    # api_key_to_use: only passed for enrichment (price/photos)
-    # geo_api_key: always passed so named --user-location strings can be geocoded
     api_key_to_use = api_key if args.enrich else None
-    parsed_data = parse_places(
-        raw_data,
-        api_key=api_key_to_use,
-        geo_api_key=api_key,
-        user_location=args.user_location,
-        top_n=args.top_n
-    )
+    use_adaptive = args.radius is not None and args.top_n is not None and args.user_location is not None
+
+    if use_adaptive:
+        print(
+            f"[adaptive] mode active: radius={args.radius} km, top_n={args.top_n}",
+            file=sys.stderr,
+        )
+        parsed_data = adaptive_fetch_and_parse(
+            list_id,
+            api_key=api_key_to_use,
+            geo_api_key=api_key,
+            user_location=args.user_location,
+            top_n=args.top_n,
+            radius_km=args.radius,
+            max_fetch_limit=args.limit,
+        )
+    else:
+        # Standard path: single full fetch then parse.
+        # geo_api_key is always passed so named --user-location strings can be
+        # geocoded even when enrichment is off.
+        raw_data = fetch_list_data(list_id, limit=args.limit)
+        if not raw_data:
+            print("Error: Failed to fetch list content.", file=sys.stderr)
+            sys.exit(1)
+        parsed_data = parse_places(
+            raw_data,
+            api_key=api_key_to_use,
+            geo_api_key=api_key,
+            user_location=args.user_location,
+            top_n=args.top_n,
+            radius_km=args.radius,
+        )
     if not parsed_data:
         print("Error: Failed to parse places from list.", file=sys.stderr)
         sys.exit(1)

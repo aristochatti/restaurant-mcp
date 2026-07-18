@@ -160,18 +160,22 @@ async def test_tools_list_exposes_get_maps_list_with_its_input_schema(client):
 
 async def test_get_maps_list_tool_call(client, monkeypatch):
     async def fake_fetch_from_list(url, *args, **kwargs):
-        return [
-            {
-                "placeId": "p1",
-                "name": "Test Place",
-                "address": "Test Address",
-                "rating": 4.5,
-                "userRatingsTotal": 100,
-                "priceLevel": 2,
-                "openNow": True,
-                "photoUrl": None,
-            }
-        ]
+        return {
+            "places": [
+                {
+                    "placeId": "p1",
+                    "name": "Test Place",
+                    "address": "Test Address",
+                    "rating": 4.5,
+                    "userRatingsTotal": 100,
+                    "priceLevel": 2,
+                    "openNow": True,
+                    "photoUrl": None,
+                }
+            ],
+            "is_truncated": False,
+            "total_fetched": 1,
+        }
 
     monkeypatch.setattr(server, "fetch_from_list", fake_fetch_from_list)
 

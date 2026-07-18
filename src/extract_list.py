@@ -8,8 +8,19 @@ import math
 import os
 import re
 import sys
+import time
 import urllib.request
 import urllib.parse
+
+
+# ---------------------------------------------------------------------------
+# Adaptive fetch configuration
+# ---------------------------------------------------------------------------
+# Batch sizes tried in order when adaptive fetching is active (radius_km +
+# top_n + user_location all provided).  Each step fetches incrementally more
+# items from Google; the loop stops as soon as top_n results are found within
+# the radius.  The final element should match _FETCH_LIMIT in lists.py.
+_ADAPTIVE_BATCHES = [100, 300, 500]
 
 
 def resolve_list_id(short_url):
@@ -244,7 +255,15 @@ def resolve_coordinates(location_str: str, api_key: str | None = None) -> tuple[
     return None
 
 
-def parse_places(api_response, api_key=None, geo_api_key=None, user_location=None, top_n=None):
+def parse_places(
+    api_response,
+    api_key=None,
+    geo_api_key=None,
+    user_location=None,
+    top_n=None,
+    radius_km=None,
+    fetch_limit=500,
+):
     """
     Parses the JSON response into a clean list of place objects, sorting by
     distance and limiting results if specified.
@@ -259,6 +278,12 @@ def parse_places(api_response, api_key=None, geo_api_key=None, user_location=Non
                        gracefully to None — sorting is simply skipped.
         user_location: User location string ("lat,lon" or address) for sorting.
         top_n:         If set, keep only the closest N places after sorting.
+        radius_km:     If set, discard any place further than this distance
+                       from user_location before sorting / slicing.  Requires
+                       user_location to have an effect.
+        fetch_limit:   The limit that was passed to fetch_list_data().  Used
+                       to detect whether the list was truncated (i.e. the list
+                       may have more items than what was fetched).
     """
     if not api_response or not isinstance(api_response, list) or len(api_response) == 0:
         return None
@@ -271,12 +296,18 @@ def parse_places(api_response, api_key=None, geo_api_key=None, user_location=Non
         "description": main_data[5] if len(main_data) > 5 else "",
         "owner": main_data[3][0] if len(main_data) > 3 and main_data[3] else "Unknown Owner",
         "total_items": 0,
+        # True when the API returned exactly fetch_limit items, meaning the list
+        # likely has more entries that were not fetched.
+        "is_truncated": False,
         "places": []
     }
     
     if len(main_data) > 8 and main_data[8]:
         places_list = main_data[8]
         list_metadata["total_items"] = len(places_list)
+        # Detect truncation: if we got exactly as many items as we asked for,
+        # the list almost certainly has more entries beyond what was fetched.
+        list_metadata["is_truncated"] = len(places_list) >= fetch_limit
         
         # 1. Parse all items first (without Place API enrichment)
         for idx, item in enumerate(places_list):
@@ -315,7 +346,7 @@ def parse_places(api_response, api_key=None, geo_api_key=None, user_location=Non
             }
             list_metadata["places"].append(place_obj)
             
-        # 2. Sort by distance if user_location is provided
+        # 2. Sort by distance / apply radius filter if user_location is provided
         if user_location:
             # Use geo_api_key for coordinate resolution; fall back to api_key
             # (enrichment key) if geo_api_key is not separately provided.
@@ -330,10 +361,23 @@ def parse_places(api_response, api_key=None, geo_api_key=None, user_location=Non
                         place["distance_km"] = round(dist, 2)
                     else:
                         place["distance_km"] = None
-                
+
+                # 2a. Radius pre-filter: drop places beyond the requested radius.
+                #     Places with no coordinates are also dropped here because we
+                #     cannot confirm they are within the radius.
+                if radius_km is not None:
+                    list_metadata["places"] = [
+                        p for p in list_metadata["places"]
+                        if p["distance_km"] is not None and p["distance_km"] <= radius_km
+                    ]
+                    print(
+                        f"Radius filter ({radius_km} km): {len(list_metadata['places'])} places remain.",
+                        file=sys.stderr,
+                    )
+
                 # Sort: places with distance sorted increasing, places with None at the end
-                list_metadata["places"].sort(key=lambda p: (p["distance_km"] is None, p["distance_km"]))
-                
+                list_metadata["places"].sort(key=lambda p: (p["distance_km"] is None, p["distance_km"] or 0))
+
         # 3. Restrict to top N matches if specified
         if top_n is not None:
             list_metadata["places"] = list_metadata["places"][:top_n]
@@ -349,3 +393,185 @@ def parse_places(api_response, api_key=None, geo_api_key=None, user_location=Non
                 place["photos"] = photos
                 
     return list_metadata
+
+
+# ---------------------------------------------------------------------------
+# Adaptive fetch + parse
+# ---------------------------------------------------------------------------
+
+def adaptive_fetch_and_parse(
+    list_id: str,
+    api_key=None,
+    geo_api_key=None,
+    user_location=None,
+    top_n=None,
+    radius_km=None,
+    max_fetch_limit=500,
+):
+    """
+    Fetch list items in increasing batches, stopping as soon as *top_n* results
+    are found within *radius_km* of *user_location*.
+
+    Strategy
+    --------
+    1. Resolve user coordinates **once** (avoids repeated geocoding API calls).
+    2. Loop through _ADAPTIVE_BATCHES (e.g. 100 → 300 → 500 items):
+       a. Fetch that many items from Google.
+       b. Compute haversine distances and apply the radius filter locally.
+       c. If we have >= top_n results, or the list is exhausted, stop.
+    3. Apply top_n slice on the final set.
+    4. Run enrichment (price/photos) **only** on the final top_n places.
+
+    Falls back to a single full fetch (no adaptive loop) when any of
+    radius_km / top_n / user_location is absent.
+
+    Args:
+        list_id:         Google Maps list ID (from resolve_list_id).
+        api_key:         Google Places API key for *enrichment* only (price/photos).
+        geo_api_key:     Google API key for geocoding named user_location strings.
+        user_location:   "lat,lon" string or human-readable address.
+        top_n:           Target number of results to return.
+        radius_km:       Only places within this distance are counted / returned.
+        max_fetch_limit: Hard cap on total items fetched (default 500).
+
+    Returns:
+        Same dict format as parse_places(), or None on failure.
+    """
+    use_adaptive = (
+        radius_km is not None
+        and top_n is not None
+        and user_location is not None
+    )
+
+    if not use_adaptive:
+        # No optimisation possible — single full fetch.
+        raw = fetch_list_data(list_id, limit=max_fetch_limit)
+        if not raw:
+            return None
+        return parse_places(
+            raw,
+            api_key=api_key,
+            geo_api_key=geo_api_key,
+            user_location=user_location,
+            top_n=top_n,
+            radius_km=radius_km,
+            fetch_limit=max_fetch_limit,
+        )
+
+    # ------------------------------------------------------------------
+    # Resolve coordinates ONCE so subsequent parse_places calls receive a
+    # raw "lat,lon" string and skip the geocoding HTTP round-trip.
+    # ------------------------------------------------------------------
+    key_for_geo = geo_api_key or api_key
+    t_geo = time.perf_counter()
+    user_coords = resolve_coordinates(user_location, key_for_geo)
+    geo_ms = (time.perf_counter() - t_geo) * 1000
+
+    if not user_coords:
+        # Geocoding failed — fall back to single fetch with the original string.
+        print(
+            f"[adaptive] geocoding failed for '{user_location}' — falling back to full fetch.",
+            file=sys.stderr,
+        )
+        raw = fetch_list_data(list_id, limit=max_fetch_limit)
+        if not raw:
+            return None
+        return parse_places(
+            raw,
+            api_key=api_key,
+            geo_api_key=geo_api_key,
+            user_location=user_location,
+            top_n=top_n,
+            radius_km=radius_km,
+            fetch_limit=max_fetch_limit,
+        )
+
+    # Use the resolved coordinates as a raw string for all inner parse_places
+    # calls — this skips re-geocoding on every iteration.
+    resolved_loc = f"{user_coords[0]},{user_coords[1]}"
+    print(
+        f"[adaptive] geocoded '{user_location}' → {resolved_loc} in {geo_ms:.0f} ms",
+        file=sys.stderr,
+    )
+
+    # Build the list of batch sizes to try, capped at max_fetch_limit.
+    batches = sorted(set(
+        b for b in _ADAPTIVE_BATCHES if b <= max_fetch_limit
+    ))
+    if not batches or batches[-1] < max_fetch_limit:
+        batches.append(max_fetch_limit)
+
+    parsed = None
+    total_fetch_ms = 0.0
+
+    for batch_size in batches:
+        t_fetch = time.perf_counter()
+        raw = fetch_list_data(list_id, limit=batch_size)
+        fetch_ms = (time.perf_counter() - t_fetch) * 1000
+        total_fetch_ms += fetch_ms
+
+        if not raw:
+            print(f"[adaptive] batch={batch_size}: fetch failed.", file=sys.stderr)
+            break
+
+        # Parse WITHOUT enrichment (api_key=None); enrichment happens once
+        # on the final set after the loop to avoid redundant API calls.
+        parsed = parse_places(
+            raw,
+            api_key=None,          # skip enrichment in loop
+            geo_api_key=None,      # coords already resolved
+            user_location=resolved_loc,
+            top_n=None,            # don't slice yet
+            radius_km=radius_km,
+            fetch_limit=batch_size,
+        )
+
+        if not parsed:
+            break
+
+        n_in_radius = len(parsed["places"])
+        is_truncated = parsed.get("is_truncated", False)
+
+        print(
+            f"[adaptive] batch={batch_size:>4}: fetch={fetch_ms:>5.0f} ms | "
+            f"{n_in_radius:>3} places within {radius_km} km | "
+            f"list_truncated={is_truncated}",
+            file=sys.stderr,
+        )
+
+        if n_in_radius >= top_n or not is_truncated:
+            # Either we have enough results, or the list is fully exhausted.
+            break
+
+        print(
+            f"[adaptive] {n_in_radius}/{top_n} found — expanding to next batch...",
+            file=sys.stderr,
+        )
+
+    if not parsed:
+        return None
+
+    # Apply top_n on the final set.
+    if top_n is not None:
+        parsed["places"] = parsed["places"][:top_n]
+
+    print(
+        f"[adaptive] done — total fetch time={total_fetch_ms:.0f} ms, "
+        f"returning {len(parsed['places'])} places.",
+        file=sys.stderr,
+    )
+
+    # Enrich only the final top_n places (avoids enriching discarded results).
+    if api_key:
+        for idx, place in enumerate(parsed["places"]):
+            name = place["name"]
+            address = place["address"]
+            print(
+                f"Enriching [{idx+1}/{len(parsed['places'])}]: {name}...",
+                file=sys.stderr,
+            )
+            price_level, photos = enrich_place_details(name, address, api_key)
+            place["price_level"] = price_level
+            place["photos"] = photos
+
+    return parsed

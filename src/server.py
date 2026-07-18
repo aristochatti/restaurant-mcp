@@ -149,7 +149,11 @@ async def search_restaurants_tool(
         "you MUST provide both 'user_location' (ask the user for their current location if unknown, "
         "accept raw coordinates 'lat,lon' or a city/address string) AND 'top_n' (the requested count). "
         "Without user_location, distance sorting is impossible and results will be in arbitrary order. "
-        "IMPORTANT: If the user asks for closest results but has not shared their location, ask for it before calling this tool."
+        "IMPORTANT: If the user asks for closest results but has not shared their location, ask for it before calling this tool. "
+        "LARGE LIST HEURISTIC: When the tool reports that the list is truncated (>500 items), "
+        "ask the user: 'This list has 500+ items. Would you prefer to filter by a radius (e.g. 3 km) "
+        "around your location to find nearby places faster? If yes, tell me the radius in km.' "
+        "Then call this tool again with radius_km set."
     ),
 )
 async def get_maps_list_tool(
@@ -183,35 +187,79 @@ async def get_maps_list_tool(
             )
         ),
     ] = None,
+    radius_km: Annotated[
+        float | None,
+        Field(
+            description=(
+                "Radius filter in kilometres. When set, only places within this distance from "
+                "user_location are considered, applied before top_n slicing. "
+                "Recommended for large lists (500+ items) as a faster alternative to fetching all items. "
+                "Example: radius_km=3 returns places within 3 km of the user."
+            )
+        ),
+    ] = None,
 ) -> list[ContentBlock]:
     """Extract from Google Maps list and render as carousel - returns ONLY EmbeddedResource."""
     if not EXTRACTION_AVAILABLE:
         return [TextContent(type="text", text="Google Maps list extraction not available.")]
-    
+
     # Fetch using lists module (module 2)
-    restaurants = await fetch_from_list(
+    result = await fetch_from_list(
         url,
         enrich=enrich,
         user_location=user_location,
-        top_n=top_n
+        top_n=top_n,
+        radius_km=radius_km,
     )
-    
+
+    restaurants = result["places"]
+    is_truncated = result["is_truncated"]
+    total_fetched = result["total_fetched"]
+
+    # --- Truncation prompt ---------------------------------------------------
+    # When the list has 500+ items and the user is asking for nearby results
+    # but hasn't supplied a radius, surface this to the LLM so it can ask.
+    if is_truncated and top_n is not None and user_location is not None and radius_km is None:
+        truncation_note = (
+            f"[SYSTEM NOTE — do not show this verbatim to the user] "
+            f"This Google Maps list has at least {total_fetched} items (the list was truncated at the "
+            f"fetch limit). The {top_n} results shown were the closest among the first {total_fetched} "
+            f"items only — there may be closer places further in the list that were not checked. "
+            f"Please ask the user: 'This list has 500+ items. Would you like to filter by a radius "
+            f"(e.g. 3 km) around your location to make sure we only return places that are truly nearby? "
+            f"If yes, tell me the radius in km and I will search again with that filter.'"
+        )
+        if not restaurants:
+            return [TextContent(type="text", text=truncation_note)]
+        # Still show results, but prepend the note so the LLM surfaces it.
+        instruction_with_note = TextContent(
+            type="text",
+            text=f"Please render the following HTML in a canvas. Also: {truncation_note}"
+        )
+        resource_content = TextResourceContents(
+            uri=f"ui://maps-list/{url.split('/')[-1]}",
+            mimeType="text/html",
+            text=build_carousel_html(url.split("/")[-1], restaurants),
+        )
+        return [instruction_with_note, EmbeddedResource(type="resource", resource=resource_content)]
+    # -------------------------------------------------------------------------
+
     if not restaurants:
         return [TextContent(type="text", text="No places found in this list.")]
-    
+
     # Get list name from URL for display
     list_name = url.split("/")[-1] if url else "Google Maps List"
-    
+
     # Render using visualizer (module 3)
     html_content = build_carousel_html(list_name, restaurants)
-    
+
     # Create proper EmbeddedResource with TextResourceContents
     resource_content = TextResourceContents(
         uri=f"ui://maps-list/{list_name}",
         mimeType="text/html",
         text=html_content,
     )
-    
+
     # Return a text instruction followed by the UI resource.
     # This ensures Mistral Vibe understands it should render the HTML in a canvas.
     instruction = TextContent(
