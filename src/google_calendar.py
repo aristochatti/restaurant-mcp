@@ -8,7 +8,7 @@ from googleapiclient.discovery import build
 
 SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 
-PROJECT_DIR = Path(__file__).resolve().parents[2]
+PROJECT_DIR = Path(__file__).resolve().parents[1]
 TOKEN_FILE = PROJECT_DIR / "token.json"
 
 

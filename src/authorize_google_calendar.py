@@ -7,7 +7,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 
 SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 
-# This script lives in <project>/scripts; OAuth files live in the project root.
+# This script lives in <project>/src; OAuth files live in the project root.
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 CREDENTIALS_FILE = PROJECT_DIR / "credentials.json"
 TOKEN_FILE = PROJECT_DIR / "token.json"
