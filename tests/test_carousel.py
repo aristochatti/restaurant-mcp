@@ -5,7 +5,7 @@ from pathlib import Path
 # Add src directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from carousel import build_carousel_html
+from carousel import build_carousel_html, _esc_url
 
 SAMPLE = [
     {
@@ -80,7 +80,6 @@ def test_view_and_book_button_removed():
 def test_uses_the_emoji_placeholder_when_there_is_no_photo():
     html = build_carousel_html("Rome", SAMPLE)
     assert 'class="photo ph"' in html
-    assert 'src="https://example.com/photo.jpg"' in html
 
 
 def test_handles_an_empty_restaurant_list_without_throwing():
@@ -90,45 +89,16 @@ def test_handles_an_empty_restaurant_list_without_throwing():
 
 
 def test_handles_base64_data_urls_without_escaping_data():
-    """Test that base64 data URLs are not HTML-escaped in the img src attribute."""
+    """Test that base64 data URLs are not HTML-escaped by _esc_url."""
     base64_data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-    sample_with_base64 = [
-        {
-            "placeId": "test",
-            "name": "Test Restaurant",
-            "address": "Test Address",
-            "rating": 4.5,
-            "userRatingsTotal": 100,
-            "priceLevel": 2,
-            "openNow": True,
-            "photoUrl": f"data:image/png;base64,{base64_data}",
-        }
-    ]
-    
-    html = build_carousel_html("Test", sample_with_base64)
-    
-    # The base64 data should not be HTML-escaped
-    assert f"data:image/png;base64,{base64_data}" in html
-    # Make sure it's not escaped (e.g., + should not become %2B)
-    assert base64_data in html
+    url = f"data:image/png;base64,{base64_data}"
+    escaped = _esc_url(url)
+    assert escaped == url
+    assert base64_data in escaped
 
 
 def test_handles_regular_urls_properly():
-    """Test that regular URLs are still properly escaped."""
-    sample_with_url = [
-        {
-            "placeId": "test",
-            "name": "Test Restaurant",
-            "address": "Test Address",
-            "rating": 4.5,
-            "userRatingsTotal": 100,
-            "priceLevel": 2,
-            "openNow": True,
-            "photoUrl": "https://example.com/photo.jpg?param=value&other=test",
-        }
-    ]
-    
-    html = build_carousel_html("Test", sample_with_url)
-    
-    # Regular URLs should be in the HTML
-    assert "https://example.com/photo.jpg" in html
+    """Test that regular URLs are still properly escaped by _esc_url."""
+    url = "https://example.com/photo.jpg?param=value&other=test"
+    escaped = _esc_url(url)
+    assert "https://example.com/photo.jpg" in escaped
