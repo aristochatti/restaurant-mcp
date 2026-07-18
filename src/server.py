@@ -359,27 +359,14 @@ def call_restaurant_for_booking(
         from phone_booking import check_active_call, wait_for_conversation_summary
         active_conv_id = check_active_call(agent_id)
         if active_conv_id:
-            # A call is already in progress! Block and wait for it to complete instead of starting a new one.
-            import time
-            called_at = time.time()
-            summary_result = wait_for_conversation_summary(
-                agent_id=agent_id,
-                called_at_epoch=called_at - 180,  # Look back up to 3 minutes
-                poll_interval=5,
-                max_wait=180
-            )
             import json
+            import time
             return json.dumps({
                 "success": True,
-                "message": "⚠️ A booking call was already active and in progress. We blocked and waited for its completion.",
-                "details": {
-                    "restaurant_name": restaurant_name,
-                    "guest_name": guest_name,
-                    "date": date,
-                    "time_start": time_start,
-                    "pax": pax
-                },
-                "post_call_analysis": summary_result
+                "status": "in_progress",
+                "conversation_id": active_conv_id,
+                "called_at": time.time() - 30,
+                "message": "⚠️ A booking call is already active and in progress. Call check_booking_status using this conversation_id to check the outcome."
             }, indent=2)
 
     # Default time_end to 1.5 hours after time_start if not provided
@@ -408,18 +395,117 @@ def call_restaurant_for_booking(
     if result.get("success"):
         agent_id = os.environ.get("ELEVENLABS_AGENT_ID")
         if agent_id:
-            from phone_booking import wait_for_conversation_summary
-            # Wait for call to complete and get the post-call transcript/summary (up to 5 mins)
-            summary_result = wait_for_conversation_summary(
-                agent_id=agent_id,
-                called_at_epoch=called_at,
-                poll_interval=5,
-                max_wait=300
-            )
-            result["post_call_analysis"] = summary_result
+            # Sleep 3 seconds to let ElevenLabs register the conversation
+            time.sleep(3)
+            conversation_id = None
+            try:
+                from phone_booking import _CONVERSATIONS_URL
+                import httpx
+                with httpx.Client(timeout=5) as client:
+                    resp = client.get(
+                        _CONVERSATIONS_URL,
+                        headers={"xi-api-key": os.environ.get("ELEVENLABS_API_KEY")},
+                        params={"agent_id": agent_id, "page_size": 5},
+                    )
+                if resp.status_code == 200:
+                    conversations = resp.json().get("conversations", [])
+                    for conv in conversations:
+                        start_time = conv.get("start_time_unix_secs", 0)
+                        if start_time >= called_at - 15:
+                            conversation_id = conv.get("conversation_id")
+                            break
+            except Exception:
+                pass
+
+            import json
+            return json.dumps({
+                "success": True,
+                "status": "initiated",
+                "conversation_id": conversation_id,
+                "called_at": called_at,
+                "message": "📞 Phone call successfully initiated on the ElevenLabs network! You MUST now actively call the check_booking_status tool using this conversation_id and called_at timestamp every 10-15 seconds until it completes."
+            }, indent=2)
 
     import json
     return json.dumps(result, indent=2)
+
+
+@mcp.tool(
+    name="check_booking_status",
+    title="Check Booking Call Status",
+    description=(
+        "MANDATORY: Call this tool every 10-15 seconds after initiating a booking call "
+        "to check its progress and get the final transcript/summary. "
+        "Pass the conversation_id and called_at timestamp returned by call_restaurant_for_booking."
+    ),
+)
+async def check_booking_status_tool(
+    conversation_id: Annotated[
+        str | None,
+        Field(description="The conversation ID returned by call_restaurant_for_booking (optional)"),
+    ] = None,
+    called_at: Annotated[
+        float | None,
+        Field(description="The epoch timestamp when the call was initiated (optional)"),
+    ] = None,
+) -> str:
+    """Check status of an active booking call."""
+    import json
+    import time
+    from phone_booking import get_conversation_summary, _CONVERSATIONS_URL
+    import httpx
+    import os
+
+    agent_id = os.environ.get("ELEVENLABS_AGENT_ID")
+    api_key = os.environ.get("ELEVENLABS_API_KEY")
+
+    if not agent_id or not api_key:
+        return json.dumps({"status": "error", "message": "Missing ElevenLabs credentials"}, indent=2)
+
+    # 1. If we don't have conversation_id, try to find it using called_at
+    if not conversation_id and called_at:
+        try:
+            with httpx.Client(timeout=10) as client:
+                resp = client.get(
+                    _CONVERSATIONS_URL,
+                    headers={"xi-api-key": api_key},
+                    params={"agent_id": agent_id, "page_size": 10},
+                )
+            if resp.status_code == 200:
+                conversations = resp.json().get("conversations", [])
+                for conv in conversations:
+                    start_time = conv.get("start_time_unix_secs", 0)
+                    if start_time >= called_at - 15:  # 15s tolerance
+                        conversation_id = conv.get("conversation_id")
+                        break
+        except Exception as e:
+            return json.dumps({"status": "error", "message": f"Error looking up conversation: {str(e)}"}, indent=2)
+
+    if not conversation_id:
+        return json.dumps({
+            "status": "initializing",
+            "message": "Call is still initializing on the network. Please wait 10 seconds and try again."
+        }, indent=2)
+
+    # 2. Fetch the conversation status
+    try:
+        summary_result = get_conversation_summary(conversation_id, api_key=api_key)
+        status = summary_result.get("status", "")
+        if status not in ("done", "failed"):
+            return json.dumps({
+                "status": "in_progress",
+                "conversation_id": conversation_id,
+                "message": f"Call is currently {status}. The AI is talking to the restaurant. Please wait 10-15 seconds and check status again."
+            }, indent=2)
+
+        # Call is done! Return the final summary
+        return json.dumps({
+            "status": "completed",
+            "conversation_id": conversation_id,
+            "post_call_analysis": summary_result
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": f"Error fetching conversation summary: {str(e)}"}, indent=2)
 
 
 # =============================================================================
