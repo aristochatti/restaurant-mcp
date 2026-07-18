@@ -52,9 +52,9 @@ from lists import fetch_from_list, EXTRACTION_AVAILABLE
 def _transport_security() -> TransportSecuritySettings:
     """FastMCP defaults allowed_hosts to localhost only, with DNS-rebinding
     protection on. Behind Alpic the Host header is the public domain, so that
-    default would 421 every request. Rebinding protection exists to stop a
-    malicious page from reaching a server bound to the user's loopback — not a
-    threat model a public MCP endpoint sits in — so it's off unless you pin
+    default would 421 every request once deployed behind Alpic's public domain.
+    Rebinding protection exists to stop a malicious page from reaching a server
+    bound to the user's loopback  not a threat model a public MCP endpoint sits in  so it's off unless you pin
     hosts explicitly via MCP_ALLOWED_HOSTS (comma-separated, ':*' wildcards ok).
     """
     allowed = [h.strip() for h in os.environ.get("MCP_ALLOWED_HOSTS", "").split(",") if h.strip()]
@@ -67,7 +67,7 @@ def _transport_security() -> TransportSecuritySettings:
     )
 
 
-# Stateless Streamable HTTP — each request stands alone (simple + Alpic-friendly).
+# Stateless Streamable HTTP  each request stands alone (simple + Alpic-friendly).
 mcp = FastMCP(
     "resto-mcp",
     stateless_http=True,
@@ -123,7 +123,13 @@ async def search_restaurants_tool(
         text=html_content,
     )
     
-    return [EmbeddedResource(type="resource", resource=resource_content)]
+    # Return a text instruction followed by the UI resource.
+    # This ensures Mistral Vibe understands it should render the HTML in a canvas.
+    instruction = TextContent(
+        type="text",
+        text="Please render the following HTML in a canvas:"
+    )
+    return [instruction, EmbeddedResource(type="resource", resource=resource_content)]
 
 
 # =============================================================================
@@ -188,7 +194,13 @@ async def get_maps_list_tool(
         text=html_content,
     )
     
-    return [EmbeddedResource(type="resource", resource=resource_content)]
+    # Return a text instruction followed by the UI resource.
+    # This ensures Mistral Vibe understands it should render the HTML in a canvas.
+    instruction = TextContent(
+        type="text",
+        text="Please render the following HTML in a canvas:"
+    )
+    return [instruction, EmbeddedResource(type="resource", resource=resource_content)]
 
 
 # =============================================================================
@@ -231,7 +243,13 @@ async def visualize_restaurants_tool(
         text=html_content,
     )
     
-    return [EmbeddedResource(type="resource", resource=resource_content)]
+    # Return a text instruction followed by the UI resource.
+    # This ensures Mistral Vibe understands it should render the HTML in a canvas.
+    instruction = TextContent(
+        type="text",
+        text="Please render the following HTML in a canvas:"
+    )
+    return [instruction, EmbeddedResource(type="resource", resource=resource_content)]
 
 
 # =============================================================================
@@ -426,7 +444,7 @@ class RejectMcpGet:
     """Answer GET /mcp with 405 instead of opening an SSE stream.
 
     Streamable HTTP allows GET for server->client push, but we run stateless, so
-    such a stream can never carry anything — it would just pin a connection open
+    such a stream can never carry anything  it would just pin a connection open
     forever. Kept as pure ASGI rather than BaseHTTPMiddleware, which buffers
     responses and would break the SSE streaming that POST /mcp relies on.
     """
