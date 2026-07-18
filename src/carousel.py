@@ -7,11 +7,13 @@ so it renders identically in Le Chat, Claude, and any mcp-ui host.
 
 FEATURES:
 - Basic view: name, photo, location, rating, price, open/closed status
+- Google Maps button for each restaurant
 - TODO: Expanded view with hours, menu, direct booking (future enhancement)
 """
 
 from html import escape
 from typing import Any
+from urllib.parse import quote
 import random
 
 _STYLE = """
@@ -49,6 +51,9 @@ _STYLE = """
   .book { margin-left:auto; font-size:13px; font-weight:600; color:#047857; text-decoration:none;
           padding:6px 10px; border-radius:8px; background:#ecfdf5; }
   .book:hover { background:#d1fae5; }
+  .map-btn { font-size:13px; font-weight:600; color:#1485ee; text-decoration:none;
+             padding:6px 10px; border-radius:8px; background:#eef4ff; border:1px solid #bae6fd; }
+  .map-btn:hover { background:#d9efff; }
 """
 
 # List of food emojis to use instead of images
@@ -154,6 +159,14 @@ def _get_random_food_emoji() -> str:
     return random.choice(FOOD_EMOJIS)
 
 
+def _build_maps_url(address: str | None) -> str:
+    """Build a Google Maps search URL for the given address."""
+    if not address:
+        return "#"
+    # URL encode the address for the query parameter
+    encoded_address = quote(address)
+    return f"https://www.google.com/maps/search/?api=1&query={encoded_address}"
+
 
 def _card(r: dict[str, Any]) -> str:
     """
@@ -166,6 +179,7 @@ def _card(r: dict[str, Any]) -> str:
     - Rating
     - Price level
     - Open/closed status
+    - Google Maps button
     
     TODO: Expanded view (click to show):
     - Hours
@@ -203,6 +217,10 @@ def _card(r: dict[str, Any]) -> str:
     count = f'<span class="cnt">({total})</span>' if total else ""
     price_span = f'<span class="price">{price}</span>' if price else ""
 
+    # Build Google Maps URL
+    maps_url = _build_maps_url(r.get("address"))
+    maps_btn = f'<a href="{_esc_url(maps_url)}" class="map-btn" target="_blank" rel="noopener noreferrer">Map</a>'
+
     return f"""
   <div class="card">
     {img}
@@ -215,6 +233,7 @@ def _card(r: dict[str, Any]) -> str:
       <div class="rrow">{_stars(r.get("rating"))}{count}</div>
       <div class="actions">
         {tag}
+        {maps_btn}
       </div>
     </div>
   </div>"""
