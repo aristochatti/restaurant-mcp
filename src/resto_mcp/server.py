@@ -64,11 +64,11 @@ async def search_restaurants_tool(
     if not restaurants:
         return [TextContent(type="text", text=f'No restaurants found in "{location}".')]
 
-    ui = create_ui_resource(
-        f"ui://restaurants/{location}",
-        mimeType="text/html",
-        text=build_carousel_html(location, restaurants)
-    )
+    ui = create_ui_resource({
+        "uri": f"ui://restaurants/{location}",
+        "content": {"type": "rawHtml", "htmlString": build_carousel_html(location, restaurants)},
+        "encoding": "text"
+    })
 
     # Text fallback for hosts that don't render mcp-ui.
     fallback = "\n".join(_summarise(i, r) for i, r in enumerate(restaurants))
