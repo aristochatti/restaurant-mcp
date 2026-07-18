@@ -1,4 +1,9 @@
 import pytest
+import sys
+from pathlib import Path
+
+# Add src directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from extract_list import haversine_distance, resolve_coordinates, parse_places
 
 def test_haversine_distance():

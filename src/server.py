@@ -113,7 +113,6 @@ async def search_restaurants_tool(
     if not restaurants:
         return [TextContent(type="text", text=f'No restaurants found in "{location}".')]
 
-    # Render using visualizer (module 3)
     # Use relative base URL for proxy - MCP clients should resolve this correctly
     html_content = build_carousel_html(location, restaurants)
     
