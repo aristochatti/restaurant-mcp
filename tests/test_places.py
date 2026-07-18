@@ -19,9 +19,12 @@ def stub_places(monkeypatch):
 
     calls: list[httpx.Request] = []
 
-    def install(status_code: int, body, *, text: str | None = None):
+    def install(status_code: int, body, *, text: str | None = None, photo_uri: str | None = None):
         def handler(request: httpx.Request) -> httpx.Response:
             calls.append(request)
+            url = str(request.url)
+            if "media" in url and photo_uri:
+                return httpx.Response(status_code, json={"photoUri": photo_uri})
             if text is not None:
                 return httpx.Response(status_code, text=text)
             return httpx.Response(status_code, json=body)
@@ -53,9 +56,10 @@ async def test_maps_a_places_response_into_the_carousels_restaurant_shape(stub_p
                 }
             ]
         },
+        photo_uri="https://lh3.googleusercontent.com/test-photo.jpg",
     )
 
-    (r,) = await search_restaurants("Rome", 5, fetch_images=False)
+    (r,) = await search_restaurants("Rome", 5, fetch_images=True)
 
     assert r["placeId"] == "place-1"
     assert r["name"] == "Osteria Fernanda"
@@ -64,9 +68,7 @@ async def test_maps_a_places_response_into_the_carousels_restaurant_shape(stub_p
     assert r["userRatingsTotal"] == 900
     assert r["priceLevel"] == 3
     assert r["openNow"] is True
-    assert "places.googleapis.com/v1/places/place-1/photos/xyz/media" in r["photoUrl"]
-    assert "maxWidthPx=500" in r["photoUrl"]
-    assert "key=test-key" in r["photoUrl"]
+    assert r["photoUrl"] == "https://lh3.googleusercontent.com/test-photo.jpg"
     assert r["photoName"] == "places/place-1/photos/xyz"
 
 
