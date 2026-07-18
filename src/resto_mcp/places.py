@@ -32,6 +32,9 @@ _PRICE_MAP = {
     "PRICE_LEVEL_VERY_EXPENSIVE": 4,
 }
 
+# Use a smaller image size to keep base64-encoded HTML under MCP response limits
+_IMAGE_MAX_WIDTH = 150
+
 
 async def _fetch_image_as_base64(photo_name: str, key: str) -> str | None:
     """Fetch an image from Google Places and return it as a base64 data URL.
@@ -45,7 +48,7 @@ async def _fetch_image_as_base64(photo_name: str, key: str) -> str | None:
     """
     try:
         # First, get the photo metadata from Google Places API
-        photo_metadata_url = f"https://places.googleapis.com/v1/{photo_name}/media?maxWidthPx=500&key={key}"
+        photo_metadata_url = f"https://places.googleapis.com/v1/{photo_name}/media?maxWidthPx={_IMAGE_MAX_WIDTH}&key={key}"
         
         async with httpx.AsyncClient(timeout=10) as client:
             # Fetch photo metadata
@@ -141,7 +144,7 @@ def _to_restaurant(p: dict[str, Any], key: str) -> dict[str, Any]:
     
     # Generate direct Google Places photo metadata URL
     direct_photo_url = (
-        f"https://places.googleapis.com/v1/{photo_name}/media?maxWidthPx=500&key={key}"
+        f"https://places.googleapis.com/v1/{photo_name}/media?maxWidthPx={_IMAGE_MAX_WIDTH}&key={key}"
         if photo_name
         else None
     )
