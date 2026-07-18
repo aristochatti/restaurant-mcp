@@ -65,7 +65,7 @@ async def search_restaurants_tool(
         return [TextContent(type="text", text=f'No restaurants found in "{location}".')]
 
     ui = create_ui_resource(
-        uri=f"ui://restaurants/{location}",
+        f"ui://restaurants/{location}",
         mimeType="text/html",
         text=build_carousel_html(location, restaurants)
     )
