@@ -113,7 +113,7 @@ async def test_malformed_json_body_does_not_crash_the_server(client):
 async def test_tool_call_returns_a_ui_resource(client, monkeypatch):
     """Test that the tool returns a UI resource with the correct mimeType.
     
-    We return ONLY the UI resource (no text fallback) to ensure Mistral Vibe
+    We return a text instruction followed by the UI resource to ensure Mistral Vibe
     renders the HTML in a canvas.
     """
     async def fake_search(location, limit):
@@ -142,10 +142,16 @@ async def test_tool_call_returns_a_ui_resource(client, monkeypatch):
     assert "error" not in body, body
 
     content = body["result"]["content"]
-    # Should only have one content block - the UI resource
-    assert len(content) == 1
+    # Should have two content blocks: instruction text and UI resource
+    assert len(content) == 2
     
-    ui = content[0]
+    # First block should be the instruction
+    instruction = content[0]
+    assert instruction["type"] == "text"
+    assert "canvas" in instruction["text"].lower()
+    
+    # Second block should be the UI resource
+    ui = content[1]
     assert ui["type"] == "resource"
     assert ui["resource"]["uri"].startswith("ui://restaurants/")
     # The mimeType should be text/html

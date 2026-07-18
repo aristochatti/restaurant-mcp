@@ -104,12 +104,13 @@ async def search_restaurants_tool(
         build_carousel_html(location, restaurants)
     )
 
-    # IMPORTANT: Return ONLY the UI resource, no text fallback.
-    # Mistral Vibe will render the HTML resource in a canvas when:
-    # 1. It's the only content block returned
-    # 2. It has mimeType "text/html"
-    # 3. The HTML is self-contained (no external dependencies)
-    return [ui]
+    # Return a text instruction followed by the UI resource.
+    # This ensures Mistral Vibe understands it should render the HTML in a canvas.
+    instruction = TextContent(
+        type="text",
+        text="Please render the following HTML in a canvas:"
+    )
+    return [instruction, ui]
 
 
 def _summarise(index: int, r: dict[str, Any]) -> str:
