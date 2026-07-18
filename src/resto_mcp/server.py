@@ -1,8 +1,12 @@
 import os
+import asyncio
 from typing import Annotated, Any
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 import uvicorn
+from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ContentBlock, TextContent
@@ -13,6 +17,11 @@ from starlette.responses import JSONResponse, PlainTextResponse, Response
 
 from .carousel import build_carousel_html
 from .places import search_restaurants
+from .google_calendar import create_calendar_event
+
+# Load local development settings from .env. Existing process variables (for
+# example those configured by Alpic in production) take precedence.
+load_dotenv(override=False)
 
 def _transport_security() -> TransportSecuritySettings:
     """FastMCP defaults allowed_hosts to localhost only, with DNS-rebinding
@@ -57,10 +66,10 @@ async def search_restaurants_tool(
     ],
     limit: Annotated[
         int | None,
-        Field(description="How many restaurants to return (default 8)", ge=1, le=20),
+        Field(description="How many restaurants to return (default and maximum 3)", ge=1, le=3),
     ] = None,
 ) -> list[ContentBlock]:
-    restaurants = await search_restaurants(location, limit or 8)
+    restaurants = await search_restaurants(location, min(limit or 3, 3))
 
     if not restaurants:
         return [TextContent(type="text", text=f'No restaurants found in "{location}".')]
@@ -77,6 +86,84 @@ async def search_restaurants_tool(
 
     return [ui, TextContent(type="text", text=text)]
 
+@mcp.tool(
+    name="add_reservation_to_calendar",
+    title="Add restaurant reservation to Google Calendar",
+    description=(
+        "Add a confirmed restaurant reservation directly to Google Calendar for a restaurant reservation. "
+        "Use after the user has confirmed the restaurant, date, time, "
+        "party size, and timezone."
+    ),
+)
+async def add_reservation_to_calendar_tool(
+    restaurant_name: Annotated[
+        str,
+        Field(description="Name of the restaurant"),
+    ],
+    address: Annotated[
+        str,
+        Field(description="Full restaurant address"),
+    ],
+    reservation_date: Annotated[
+        str,
+        Field(description="Reservation date in YYYY-MM-DD format"),
+    ],
+    reservation_time: Annotated[
+        str,
+        Field(description="Reservation time in HH:MM 24-hour format"),
+    ],
+    party_size: Annotated[
+        int,
+        Field(description="Number of people", ge=1),
+    ],
+    timezone_name: Annotated[
+        str,
+        Field(
+            description=(
+                "IANA timezone, such as Europe/Rome or America/New_York"
+            )
+        ),
+    ] = "Europe/Rome",
+) -> list[ContentBlock]:
+    try:
+        local_datetime = datetime.strptime(
+            f"{reservation_date} {reservation_time}",
+            "%Y-%m-%d %H:%M",
+        ).replace(tzinfo=ZoneInfo(timezone_name))
+    except (ValueError, KeyError):
+        return [
+            TextContent(
+                type="text",
+                text="Invalid reservation date, time, or timezone.",
+            )
+        ]
+
+    try:
+        event = await asyncio.to_thread(
+            create_calendar_event,
+            restaurant_name=restaurant_name,
+            address=address,
+            reservation_at=local_datetime,
+            party_size=party_size,
+        )
+    except Exception as error:
+        return [
+            TextContent(
+                type="text",
+                text=f"Could not add the reservation to Google Calendar: {error}",
+            )
+        ]
+
+    return [
+        TextContent(
+            type="text",
+            text=(
+                f"Added your reservation at {restaurant_name} "
+                f"to Google Calendar.\n"
+                f"{event.get('htmlLink', '')}"
+            ),
+        )
+    ]
 
 def _summarise(index: int, r: dict[str, Any]) -> str:
     price = " · " + "€" * r["priceLevel"] if r.get("priceLevel") else ""

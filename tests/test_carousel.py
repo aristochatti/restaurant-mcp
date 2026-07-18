@@ -11,7 +11,7 @@ SAMPLE = [
         "userRatingsTotal": 1820,
         "priceLevel": 2,
         "openNow": True,
-        "photoUrl": "https://example.com/photo.jpg",
+        "photoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTD_kDD036yCI6wlKvbejuswsnB2VpYhJFT7_-nI8UkFA&s=10",
     },
     {
         "placeId": None,
@@ -74,7 +74,7 @@ def test_links_to_place_id_when_available_falls_back_to_a_text_search():
 def test_uses_the_emoji_placeholder_when_there_is_no_photo():
     html = build_carousel_html("Rome", SAMPLE)
     assert 'class="photo ph"' in html
-    assert "background-image:url('https://example.com/photo.jpg')" in html
+    assert '<img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTD_kDD036yCI6wlKvbejuswsnB2VpYhJFT7_-nI8UkFA&amp;s=10"' in html
 
 
 def test_handles_an_empty_restaurant_list_without_throwing():
