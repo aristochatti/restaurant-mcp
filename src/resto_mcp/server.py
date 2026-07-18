@@ -41,17 +41,20 @@ mcp = FastMCP(
 
 
 def _create_ui_resource(uri: str, html: str) -> EmbeddedResource:
-    """Create a UI resource with the correct mimeType for MCP-UI.
+    """Create a UI resource that Mistral Vibe will render as HTML in a canvas.
     
-    The mimeType 'text/html;profile=mcp-app' signals to the client that this
-    is an MCP-UI resource that should be rendered as HTML in a canvas/iframe,
-    rather than being parsed as text.
+    For Mistral Vibe specifically, we use text/html mimeType and ensure
+    the HTML is self-contained. The key is to return ONLY this resource block
+    with NO text fallback, so Vibe has no choice but to render it.
+    
+    IMPORTANT: Mistral Vibe expects the HTML to be in the 'text' field of the
+    resource, and it will render it in a canvas when the mimeType is text/html.
     """
     return EmbeddedResource(
         type="resource",
         resource=TextResourceContents(
             uri=AnyUrl(uri),
-            mimeType="text/html;profile=mcp-app",
+            mimeType="text/html",
             text=html,
         ),
     )
@@ -86,13 +89,11 @@ async def search_restaurants_tool(
         build_carousel_html(location, restaurants)
     )
 
-    # Text fallback for hosts that don't render mcp-ui.
-    fallback = "\n".join(_summarise(i, r) for i, r in enumerate(restaurants))
-    text = f"Found {len(restaurants)} restaurants in {location}:\n{fallback}"
-
-    # IMPORTANT: Return ONLY the UI resource, not the text fallback.
-    # Some clients will use the text fallback instead of rendering the HTML resource.
-    # By returning only the resource, we force the client to render it as HTML.
+    # IMPORTANT: Return ONLY the UI resource, no text fallback.
+    # Mistral Vibe will render the HTML resource in a canvas when:
+    # 1. It's the only content block returned
+    # 2. It has mimeType "text/html"
+    # 3. The HTML is self-contained (no external dependencies)
     return [ui]
 
 

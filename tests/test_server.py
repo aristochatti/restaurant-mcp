@@ -113,8 +113,8 @@ async def test_malformed_json_body_does_not_crash_the_server(client):
 async def test_tool_call_returns_a_ui_resource(client, monkeypatch):
     """Test that the tool returns a UI resource with the correct mimeType.
     
-    We now return ONLY the UI resource (no text fallback) to ensure clients
-    render the HTML instead of using a text fallback.
+    We return ONLY the UI resource (no text fallback) to ensure Mistral Vibe
+    renders the HTML in a canvas.
     """
     async def fake_search(location, limit):
         return [
@@ -148,8 +148,8 @@ async def test_tool_call_returns_a_ui_resource(client, monkeypatch):
     ui = content[0]
     assert ui["type"] == "resource"
     assert ui["resource"]["uri"].startswith("ui://restaurants/")
-    # The mimeType should be text/html;profile=mcp-app to signal MCP-UI support
-    assert ui["resource"]["mimeType"] == "text/html;profile=mcp-app"
+    # The mimeType should be text/html
+    assert ui["resource"]["mimeType"] == "text/html"
     assert "Where to eat in Rome" in ui["resource"]["text"]
     assert "Trattoria Da Enzo" in ui["resource"]["text"]
 
