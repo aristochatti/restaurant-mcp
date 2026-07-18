@@ -1,5 +1,5 @@
 {
   "$schema": "https://assets.alpic.ai/alpic.json",
-  "installCommand": "npm ci",
-  "startCommand": "npm start"
+  "installCommand": "uv sync --locked",
+  "startCommand": "uv run main.py"
 }

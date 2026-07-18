@@ -1,0 +1,36 @@
+[project]
+name = "resto-mcp"
+version = "0.1.0"
+description = "MCP server that searches restaurants via Google Places and returns an interactive mcp-ui carousel."
+requires-python = ">=3.14"
+dependencies = [
+    "mcp>=1.26.0",
+    "mcp-ui-server>=1.0.0",
+    "httpx>=0.28",
+    "uvicorn>=0.34",
+]
+
+[project.scripts]
+resto-mcp = "resto_mcp.server:main"
+
+[dependency-groups]
+dev = [
+    "asgi-lifespan>=2.1.0",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/resto_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# The MCP session manager can only be started once per instance, so the app
+# fixture is session-scoped and its loop has to outlive individual tests.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
