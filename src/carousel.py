@@ -85,7 +85,7 @@ def _get_booking_url(r: dict[str, Any]) -> str:
     return "https://www.google.com/maps/search/?" + urlencode({"api": 1, "query": query})
 
 
-def _card(r: dict[str, Any]) -> str:
+def _card(r: dict[str, Any], base_url: str = "") -> str:
     """
     Render a single restaurant card.
     
@@ -105,8 +105,24 @@ def _card(r: dict[str, Any]) -> str:
     """
     photo_url = r.get("photoUrl")
     if photo_url:
-        # Use img tag with crossorigin and fallback for CORS/Mistral rendering issues
-        img = f'<div class="photo"><img src="{_esc(photo_url)}" alt="{_esc(r.get("name", ""))}" crossorigin="anonymous" onerror="this.parentElement.className=\'photo ph\';this.remove()"></div>'
+        # Check if this is a Google photo URL that needs CORS proxying
+        # Google photo URLs typically contain googleusercontent or places.googleapis.com
+        is_google_url = "googleusercontent" in photo_url or "places.googleapis.com" in photo_url or "maps.googleapis.com" in photo_url
+        
+        if is_google_url and base_url:
+            # Route through our proxy endpoint to handle CORS
+            # Construct absolute URL: base_url/proxy-image?url=ENCODED_URL
+            from urllib.parse import quote
+            proxied_url = f"{base_url.rstrip('/')}/proxy-image?url={quote(photo_url, safe='')}"
+            img = f'<div class="photo"><img src="{_esc(proxied_url)}" alt="{_esc(r.get("name", ""))}" onerror="this.parentElement.className=\'photo ph\';this.remove()"></div>'
+        elif is_google_url:
+            # Fallback: relative path (may not work in all clients)
+            from urllib.parse import quote
+            proxied_url = f"/proxy-image?url={quote(photo_url, safe='')}"
+            img = f'<div class="photo"><img src="{_esc(proxied_url)}" alt="{_esc(r.get("name", ""))}" onerror="this.parentElement.className=\'photo ph\';this.remove()"></div>'
+        else:
+            # For non-Google URLs, try direct with crossorigin
+            img = f'<div class="photo"><img src="{_esc(photo_url)}" alt="{_esc(r.get("name", ""))}" crossorigin="anonymous" onerror="this.parentElement.className=\'photo ph\';this.remove()"></div>'
     else:
         img = '<div class="photo ph">🍽️</div>'
 
@@ -146,7 +162,7 @@ def _card(r: dict[str, Any]) -> str:
   </div>"""
 
 
-def build_carousel_html(location: str, restaurants: list[dict[str, Any]]) -> str:
+def build_carousel_html(location: str, restaurants: list[dict[str, Any]], base_url: str = "") -> str:
     """
     Build complete carousel HTML from a list of restaurants.
     
@@ -162,11 +178,12 @@ def build_carousel_html(location: str, restaurants: list[dict[str, Any]]) -> str
             - photoUrl: URL for restaurant photo
             - placeId: Google Places ID (for deep links)
             - websiteUrl: Direct website URL (optional, for booking)
+        base_url: Base URL for the MCP server (e.g., "http://localhost:8001") for proxying images
     
     Returns:
         Complete HTML string for mcp-ui rendering
     """
-    cards = "".join(_card(r) for r in restaurants)
+    cards = "".join(_card(r, base_url) for r in restaurants)
     header_note = f"{len(restaurants)} places · scroll to browse →"
     
     return f"""<!doctype html><html><head><meta charset="utf-8"/>

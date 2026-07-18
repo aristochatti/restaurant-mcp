@@ -105,7 +105,8 @@ async def search_restaurants_tool(
         return [TextContent(type="text", text=f'No restaurants found in "{location}".')]
 
     # Render using visualizer (module 3)
-    html_content = build_carousel_html(location, restaurants)
+    # Use relative base URL for proxy - MCP clients should resolve this correctly
+    html_content = build_carousel_html(location, restaurants, "/")
     
     # Create proper EmbeddedResource with TextResourceContents
     resource_content = TextResourceContents(
@@ -155,7 +156,7 @@ async def get_maps_list_tool(
     list_name = url.split("/")[-1] if url else "Google Maps List"
     
     # Render using visualizer (module 3)
-    html_content = build_carousel_html(list_name, restaurants)
+    html_content = build_carousel_html(list_name, restaurants, "/")
     
     # Create proper EmbeddedResource with TextResourceContents
     resource_content = TextResourceContents(
@@ -196,7 +197,7 @@ async def visualize_restaurants_tool(
         return [TextContent(type="text", text="No restaurants provided to visualize.")]
     
     # Render using visualizer (module 3)
-    html_content = build_carousel_html(title, restaurants)
+    html_content = build_carousel_html(title, restaurants, "/")
     
     # Create proper EmbeddedResource with TextResourceContents
     resource_content = TextResourceContents(
@@ -275,10 +276,15 @@ async def health(_request: Request) -> JSONResponse:
 
 @mcp.custom_route("/proxy-image", methods=["GET"])
 async def proxy_image(request: Request) -> Response:
-    """Proxy for Google Places photos to avoid CORS issues in Mistral Vibe."""
+    """Proxy for Google Places/Google Maps photos to avoid CORS issues in Mistral Vibe."""
     url = request.query_params.get("url")
-    if not url or not url.startswith("https://places.googleapis.com"):
-        return Response(status_code=400, content="Invalid URL")
+    if not url:
+        return Response(status_code=400, content="Invalid URL: missing url parameter")
+    
+    # Allow Google Places API and Google Maps/Google User Content domains
+    allowed_domains = ["places.googleapis.com", "googleusercontent.com", "maps.googleapis.com"]
+    if not any(domain in url for domain in allowed_domains):
+        return Response(status_code=400, content=f"Invalid URL: domain not allowed. URL must be from Google services. Got: {url}")
     
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -290,8 +296,8 @@ async def proxy_image(request: Request) -> Response:
                 media_type=resp.headers.get("content-type", "image/jpeg"),
                 headers={"Cache-Control": "public, max-age=86400"}  # Cache for 24h
             )
-    except Exception:
-        return Response(status_code=500, content="Error fetching image")
+    except Exception as e:
+        return Response(status_code=500, content=f"Error fetching image: {str(e)}")
 
 
 class RejectMcpGet:
