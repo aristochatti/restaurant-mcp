@@ -21,5 +21,11 @@ Enable **Places API (New)** on your Google Cloud project for the key.
 Connectors → add MCP → paste the `https://<alpic-url>/mcp` endpoint.
 Then ask: *"Where should I eat in Paris 11e?"* → the carousel renders automatically.
 
+## Team
+- Danny Antonelli
+- Andrea Gemelli
+- Lorenzo Santolini
+- Giulia Buzzetti
+
 ## Tool
 `search_restaurants(location, limit?)` → mcp-ui carousel + text fallback.
