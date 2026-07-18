@@ -59,6 +59,19 @@ export function makeServer() {
 export const app = express();
 app.use(express.json());
 
+// Handle malformed bodies ourselves so express's default handler doesn't dump
+// a parse stack to stderr on every bad request.
+app.use((err, _req, res, next) => {
+  if (err instanceof SyntaxError && "body" in err) {
+    return res.status(400).json({
+      jsonrpc: "2.0",
+      error: { code: -32700, message: "Parse error." },
+      id: null,
+    });
+  }
+  return next(err);
+});
+
 // Stateless Streamable HTTP endpoint — fresh server per request (simple + Alpic-friendly).
 app.post("/mcp", async (req, res) => {
   try {
