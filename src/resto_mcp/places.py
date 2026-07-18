@@ -5,6 +5,7 @@ Requires GOOGLE_MAPS_API_KEY in env with "Places API (New)" enabled.
 
 import os
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -62,9 +63,18 @@ async def search_restaurants(query: str, limit: int = 8) -> list[dict[str, Any]]
 def _to_restaurant(p: dict[str, Any], key: str) -> dict[str, Any]:
     photos = p.get("photos") or []
     photo_name = photos[0].get("name") if photos else None
-    photo_url = (
+    
+    # Generate direct Google Places photo URL
+    direct_photo_url = (
         f"https://places.googleapis.com/v1/{photo_name}/media?maxWidthPx=500&key={key}"
         if photo_name
+        else None
+    )
+    
+    # Use proxy URL to avoid CORS issues in Mistral Vibe
+    photo_url = (
+        f"/proxy-image?url={quote(direct_photo_url, safe='')}"
+        if direct_photo_url
         else None
     )
 

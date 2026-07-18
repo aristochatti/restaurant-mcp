@@ -1,6 +1,7 @@
 import os
 from typing import Annotated, Any
 
+import httpx
 import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -8,7 +9,7 @@ from mcp.types import ContentBlock, TextContent
 from mcp_ui_server import create_ui_resource
 from pydantic import Field
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse
+from starlette.responses import JSONResponse, PlainTextResponse, Response
 
 from .carousel import build_carousel_html
 from .places import search_restaurants
@@ -91,6 +92,27 @@ async def root(_request: Request) -> PlainTextResponse:
 @mcp.custom_route("/health", methods=["GET"])
 async def health(_request: Request) -> JSONResponse:
     return JSONResponse({"ok": True})
+
+
+@mcp.custom_route("/proxy-image", methods=["GET"])
+async def proxy_image(request: Request) -> Response:
+    """Proxy for Google Places photos to avoid CORS issues in Mistral Vibe."""
+    url = request.query_params.get("url")
+    if not url or not url.startswith("https://places.googleapis.com"):
+        return Response(status_code=400, content="Invalid URL")
+    
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url)
+            if resp.is_error:
+                return Response(status_code=resp.status_code, content="Failed to fetch image")
+            return Response(
+                content=resp.content,
+                media_type=resp.headers.get("content-type", "image/jpeg"),
+                headers={"Cache-Control": "public, max-age=86400"}  # Cache for 24h
+            )
+    except Exception:
+        return Response(status_code=500, content="Error fetching image")
 
 
 class RejectMcpGet:
