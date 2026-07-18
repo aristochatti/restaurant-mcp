@@ -1,3 +1,4 @@
+import { pathToFileURL } from "node:url";
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -6,7 +7,7 @@ import { createUIResource } from "@mcp-ui/server";
 import { searchRestaurants } from "./places.js";
 import { buildCarouselHtml } from "./carousel.js";
 
-function makeServer() {
+export function makeServer() {
   const server = new McpServer({ name: "resto-mcp", version: "0.1.0" });
 
   server.registerTool(
@@ -55,7 +56,7 @@ function makeServer() {
   return server;
 }
 
-const app = express();
+export const app = express();
 app.use(express.json());
 
 // Stateless Streamable HTTP endpoint — fresh server per request (simple + Alpic-friendly).
@@ -87,5 +88,9 @@ app.get("/", (_req, res) => res.send("resto-mcp is running. POST /mcp"));
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 // Alpic injects MCP_HTTP_PORT; fall back to PORT / 3000 for local runs.
-const PORT = process.env.MCP_HTTP_PORT || process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`resto-mcp listening on :${PORT} (POST /mcp)`));
+// Only listen when run directly (`npm start`) so tests can import `app` and
+// bind their own ephemeral port.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const PORT = process.env.MCP_HTTP_PORT || process.env.PORT || 3000;
+  app.listen(PORT, () => console.log(`resto-mcp listening on :${PORT} (POST /mcp)`));
+}
