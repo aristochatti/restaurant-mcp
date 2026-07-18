@@ -22,7 +22,8 @@ _STYLE = """
   .track::-webkit-scrollbar-thumb { background:#d6d3d1; border-radius:4px; }
   .card { flex:0 0 260px; scroll-snap-align:start; background:#fff; border-radius:16px;
           box-shadow:0 4px 16px rgba(0,0,0,.08); overflow:hidden; display:flex; flex-direction:column; }
-  .photo { height:150px; background-size:cover; background-position:center; }
+  .photo { height:150px; background-size:cover; background-position:center; overflow:hidden; }
+  .photo img { width:100%; height:100%; object-fit:cover; display:block; }
   .photo.ph { display:flex; align-items:center; justify-content:center; font-size:48px;
               background:linear-gradient(135deg,#059669,#065f46); }
   .body { padding:12px 14px 14px; display:flex; flex-direction:column; gap:6px; }
@@ -60,11 +61,11 @@ def _stars(rating: float | None) -> str:
 
 def _card(r: dict[str, Any]) -> str:
     photo_url = r.get("photoUrl")
-    img = (
-        f"<div class=\"photo\" style=\"background-image:url('{_esc(photo_url)}')\"></div>"
-        if photo_url
-        else '<div class="photo ph">🍽️</div>'
-    )
+    if photo_url:
+        # Use img tag with crossorigin for better CORS handling
+        img = f'<div class="photo"><img src="{_esc(photo_url)}" alt="Restaurant photo" crossorigin="anonymous" onerror="this.style.display=\'none\'"></div>'
+    else:
+        img = '<div class="photo ph">🍽️</div>'
 
     price_level = r.get("priceLevel")
     price = "€" * price_level if price_level else ""
