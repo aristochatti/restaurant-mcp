@@ -16,7 +16,7 @@ SAMPLE = [
         "userRatingsTotal": 1820,
         "priceLevel": 2,
         "openNow": True,
-        "photoUrl": "https://example.com/photo.jpg",
+        "photoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTD_kDD036yCI6wlKvbejuswsnB2VpYhJFT7_-nI8UkFA&s=10",
     },
     {
         "placeId": None,
@@ -77,9 +77,10 @@ def test_view_and_book_button_removed():
     assert 'class="book"' not in html
 
 
-def test_uses_the_emoji_placeholder_when_there_is_no_photo():
+def test_uses_emoji_placeholders_instead_of_photos():
     html = build_carousel_html("Rome", SAMPLE)
-    assert 'class="photo ph"' in html
+    assert html.count('class="photo ph"') == 2
+    assert 'src="https://example.com/photo.jpg"' not in html
 
 
 def test_handles_an_empty_restaurant_list_without_throwing():
@@ -88,17 +89,42 @@ def test_handles_an_empty_restaurant_list_without_throwing():
     assert 'class="card"' not in html
 
 
-def test_handles_base64_data_urls_without_escaping_data():
-    """Test that base64 data URLs are not HTML-escaped by _esc_url."""
+def test_ignores_base64_photo_urls_in_favor_of_an_emoji():
     base64_data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-    url = f"data:image/png;base64,{base64_data}"
-    escaped = _esc_url(url)
-    assert escaped == url
-    assert base64_data in escaped
+    sample_with_base64 = [
+        {
+            "placeId": "test",
+            "name": "Test Restaurant",
+            "address": "Test Address",
+            "rating": 4.5,
+            "userRatingsTotal": 100,
+            "priceLevel": 2,
+            "openNow": True,
+            "photoUrl": f"data:image/png;base64,{base64_data}",
+        }
+    ]
+    
+    html = build_carousel_html("Test", sample_with_base64)
+    
+    assert f"data:image/png;base64,{base64_data}" not in html
+    assert 'class="photo ph"' in html
 
 
-def test_handles_regular_urls_properly():
-    """Test that regular URLs are still properly escaped by _esc_url."""
-    url = "https://example.com/photo.jpg?param=value&other=test"
-    escaped = _esc_url(url)
-    assert "https://example.com/photo.jpg" in escaped
+def test_ignores_regular_photo_urls_in_favor_of_an_emoji():
+    sample_with_url = [
+        {
+            "placeId": "test",
+            "name": "Test Restaurant",
+            "address": "Test Address",
+            "rating": 4.5,
+            "userRatingsTotal": 100,
+            "priceLevel": 2,
+            "openNow": True,
+            "photoUrl": "https://example.com/photo.jpg?param=value&other=test",
+        }
+    ]
+    
+    html = build_carousel_html("Test", sample_with_url)
+    
+    assert "https://example.com/photo.jpg" not in html
+    assert 'class="photo ph"' in html
