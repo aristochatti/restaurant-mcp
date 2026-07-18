@@ -74,7 +74,7 @@ def test_links_to_place_id_when_available_falls_back_to_a_text_search():
 def test_uses_the_emoji_placeholder_when_there_is_no_photo():
     html = build_carousel_html("Rome", SAMPLE)
     assert 'class="photo ph"' in html
-    assert "background-image:url('https://example.com/photo.jpg')" in html
+    assert 'src="https://example.com/photo.jpg"' in html
 
 
 def test_handles_an_empty_restaurant_list_without_throwing():

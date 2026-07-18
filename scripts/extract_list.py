@@ -4,6 +4,7 @@ This module provides functions to resolve list IDs, fetch list data, and parse p
 """
 
 import json
+import math
 import os
 import re
 import sys
@@ -179,9 +180,62 @@ def enrich_place_details(name, address, api_key):
     return None, []
 
 
-def parse_places(api_response, api_key=None):
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Computes the great-circle distance between two points in km."""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2 +
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+
+def resolve_coordinates(location_str: str, api_key: str | None = None) -> tuple[float, float] | None:
+    """Resolves latitude/longitude from raw coordinate string or address name query."""
+    location_str = location_str.strip()
+    match = re.match(r'^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$', location_str)
+    if match:
+        try:
+            return float(match.group(1)), float(match.group(2))
+        except ValueError:
+            pass
+            
+    if api_key and location_str:
+        url = "https://places.googleapis.com/v1/places:searchText"
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": api_key,
+            "X-Goog-FieldMask": "places.location"
+        }
+        data = {
+            "textQuery": location_str,
+            "maxResultCount": 1
+        }
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(data).encode("utf-8"),
+                headers=headers,
+                method="POST"
+            )
+            with urllib.request.urlopen(req) as response:
+                res_data = json.loads(response.read().decode('utf-8'))
+            if "places" in res_data and res_data["places"]:
+                location = res_data["places"][0].get("location", {})
+                lat = location.get("latitude")
+                lon = location.get("longitude")
+                if lat is not None and lon is not None:
+                    return float(lat), float(lon)
+        except Exception as e:
+            print(f"Warning: Failed to resolve coordinates for location '{location_str}': {e}", file=sys.stderr)
+            
+    return None
+
+
+def parse_places(api_response, api_key=None, user_location=None, top_n=None):
     """
-    Parses the JSON response into a clean list of place objects.
+    Parses the JSON response into a clean list of place objects, sorting by distance and limiting results if specified.
     """
     if not api_response or not isinstance(api_response, list) or len(api_response) == 0:
         return None
@@ -201,6 +255,7 @@ def parse_places(api_response, api_key=None):
         places_list = main_data[8]
         list_metadata["total_items"] = len(places_list)
         
+        # 1. Parse all items first (without Place API enrichment)
         for idx, item in enumerate(places_list):
             name = item[2] if len(item) > 2 else "Unknown Name"
             note = item[3] if len(item) > 3 and item[3] else ""
@@ -224,24 +279,46 @@ def parse_places(api_response, api_key=None):
                 if len(details) > 6 and details[6]:
                     place_ids = details[6]
             
-            # Enrich details if API key is provided
-            price_level = None
-            photos = []
-            if api_key:
-                print(f"Enriching place [{idx+1}/{len(places_list)}]: {name}...", file=sys.stderr)
-                price_level, photos = enrich_place_details(name, address, api_key)
-                
             place_obj = {
                 "name": name,
                 "address": address,
                 "latitude": latitude,
                 "longitude": longitude,
                 "note": note,
-                "price_level": price_level,
-                "photos": photos,
+                "price_level": None,
+                "photos": [],
                 "google_place_ids": place_ids,
                 "kg_id": kg_id
             }
             list_metadata["places"].append(place_obj)
             
+        # 2. Sort by distance if user_location is provided
+        if user_location:
+            user_coords = resolve_coordinates(user_location, api_key)
+            if user_coords:
+                user_lat, user_lon = user_coords
+                for place in list_metadata["places"]:
+                    if place["latitude"] is not None and place["longitude"] is not None:
+                        dist = haversine_distance(user_lat, user_lon, place["latitude"], place["longitude"])
+                        place["distance_km"] = round(dist, 2)
+                    else:
+                        place["distance_km"] = None
+                
+                # Sort: places with distance sorted increasing, places with None at the end
+                list_metadata["places"].sort(key=lambda p: (p["distance_km"] is None, p["distance_km"]))
+                
+        # 3. Restrict to top N matches if specified
+        if top_n is not None:
+            list_metadata["places"] = list_metadata["places"][:top_n]
+            
+        # 4. Enrich only the final filtered places
+        if api_key:
+            for idx, place in enumerate(list_metadata["places"]):
+                name = place["name"]
+                address = place["address"]
+                print(f"Enriching place [{idx+1}/{len(list_metadata['places'])}]: {name}...", file=sys.stderr)
+                price_level, photos = enrich_place_details(name, address, api_key)
+                place["price_level"] = price_level
+                place["photos"] = photos
+                
     return list_metadata

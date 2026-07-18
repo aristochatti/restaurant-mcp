@@ -153,3 +153,102 @@ async def test_public_host_is_accepted_not_421(client):
     would 421 every request once deployed behind Alpic's public domain."""
     res = await rpc(client, "initialize", INIT_PARAMS)
     assert res.status_code != 421, "public Host header must not be rejected"
+
+
+async def test_tools_list_exposes_investigate_restaurant_booking_with_its_input_schema(client):
+    await rpc(client, "initialize", INIT_PARAMS)
+    res = await rpc(client, "tools/list", {}, id=2)
+
+    body = read_rpc(res)
+    assert "error" not in body
+
+    tools = body["result"]["tools"]
+    tool = next((t for t in tools if t["name"] == "investigate_restaurant_booking"), None)
+    assert tool, f"investigate_restaurant_booking missing from: {[t['name'] for t in tools]}"
+    assert "booking" in tool["description"].lower()
+    assert "restaurant" in tool["inputSchema"]["required"]
+    assert tool["inputSchema"]["properties"]["restaurant"]["type"] == "string"
+
+
+async def test_investigate_restaurant_booking_tool_call(client, monkeypatch):
+    def fake_investigate(restaurant_query, date_str, time_start, time_end, pax, api_key):
+        return {
+            "restaurant_details": {"name": "Test Bistro"},
+            "booking_options": [{"type": "phone", "phone_number": "123"}]
+        }
+
+    monkeypatch.setattr(server, "investigate_restaurant_booking", fake_investigate)
+    monkeypatch.setenv("GOOGLE_MAPS_API_KEY", "test-key")
+
+    res = await rpc(
+        client,
+        "tools/call",
+        {
+            "name": "investigate_restaurant_booking",
+            "arguments": {
+                "restaurant": "Test Bistro",
+                "date": "today"
+            }
+        },
+        id=3
+    )
+    body = read_rpc(res)
+    assert "error" not in body
+
+    content = body["result"]["content"]
+    text = next(c for c in content if c["type"] == "text")
+    data = json.loads(text["text"])
+    assert data["restaurant_details"]["name"] == "Test Bistro"
+    assert data["booking_options"][0]["type"] == "phone"
+
+
+async def test_tools_list_exposes_get_maps_list_with_its_input_schema(client):
+    await rpc(client, "initialize", INIT_PARAMS)
+    res = await rpc(client, "tools/list", {}, id=2)
+
+    body = read_rpc(res)
+    assert "error" not in body
+
+    tools = body["result"]["tools"]
+    tool = next((t for t in tools if t["name"] == "get_maps_list"), None)
+    assert tool, f"get_maps_list missing from: {[t['name'] for t in tools]}"
+    assert "shared list" in tool["description"].lower()
+    assert "url" in tool["inputSchema"]["required"]
+    assert tool["inputSchema"]["properties"]["url"]["type"] == "string"
+
+
+async def test_get_maps_list_tool_call(client, monkeypatch):
+    def fake_resolve(url):
+        return "list-123"
+
+    def fake_fetch(list_id, limit):
+        return {"some": "raw-data"}
+
+    def fake_parse(raw_data, *args, **kwargs):
+        return {"title": "Test List", "places": [{"name": "Test Place"}]}
+
+    monkeypatch.setattr(server, "resolve_list_id", fake_resolve)
+    monkeypatch.setattr(server, "fetch_list_data", fake_fetch)
+    monkeypatch.setattr(server, "parse_places", fake_parse)
+
+    res = await rpc(
+        client,
+        "tools/call",
+        {
+            "name": "get_maps_list",
+            "arguments": {
+                "url": "https://maps.app.goo.gl/some-list"
+            }
+        },
+        id=4
+    )
+    body = read_rpc(res)
+    assert "error" not in body
+
+    content = body["result"]["content"]
+    text = next(c for c in content if c["type"] == "text")
+    data = json.loads(text["text"])
+    assert data["title"] == "Test List"
+    assert data["places"][0]["name"] == "Test Place"
+
+

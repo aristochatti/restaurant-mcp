@@ -13,6 +13,14 @@ from starlette.responses import JSONResponse, PlainTextResponse, Response
 
 from .carousel import build_carousel_html
 from .places import search_restaurants
+from .booking import investigate_restaurant_booking
+
+import sys
+from pathlib import Path
+_scripts_dir = Path(__file__).resolve().parent.parent.parent / "scripts"
+if str(_scripts_dir) not in sys.path:
+    sys.path.append(str(_scripts_dir))
+from extract_list import resolve_list_id, fetch_list_data, parse_places
 
 def _transport_security() -> TransportSecuritySettings:
     """FastMCP defaults allowed_hosts to localhost only, with DNS-rebinding
@@ -84,6 +92,115 @@ def _summarise(index: int, r: dict[str, Any]) -> str:
     return f"{index + 1}. {r['name']}{rating}{price} — {r['address']}"
 
 
+@mcp.tool(
+    name="investigate_restaurant_booking",
+    title="Investigate restaurant booking",
+    description=(
+        "Investigate booking methodologies and reservation options for a specific restaurant. "
+        "Input the restaurant name/location, target date, preferred time range, and guest count. "
+        "Returns available booking channels including phone, email, and pre-filled Zenchef or other platform links."
+    ),
+)
+def investigate_restaurant_booking_tool(
+    restaurant: Annotated[
+        str,
+        Field(description="Name and optional location of the restaurant (e.g. 'Septime Paris' or 'La Démocratie, Paris')"),
+    ],
+    date: Annotated[
+        str | None,
+        Field(description="Reservation date (YYYY-MM-DD format, or 'today'/'tomorrow'). Defaults to 'today'"),
+    ] = "today",
+    time_start: Annotated[
+        str | None,
+        Field(description="Preferred meal start time (HH:MM format). Defaults to '19:00'"),
+    ] = "19:00",
+    time_end: Annotated[
+        str | None,
+        Field(description="Preferred meal end time (HH:MM format). Defaults to '21:00'"),
+    ] = "21:00",
+    pax: Annotated[
+        int | None,
+        Field(description="Number of guests/party size. Defaults to 2", ge=1),
+    ] = 2,
+) -> str:
+    api_key = os.environ.get("GOOGLE_MAPS_API_KEY") or os.environ.get("GOOGLE_PLACES_API_KEY")
+    if not api_key:
+        return "Error: Google Places API key is not configured on the server."
+        
+    try:
+        result = investigate_restaurant_booking(
+            restaurant_query=restaurant,
+            date_str=date or "today",
+            time_start=time_start or "19:00",
+            time_end=time_end or "21:00",
+            pax=pax or 2,
+            api_key=api_key
+        )
+        import json
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return f"Error investigating booking options: {str(e)}"
+
+
+@mcp.tool(
+    name="get_maps_list",
+    title="Get Google Maps List",
+    description=(
+        "Extracts place names, addresses, coordinates, custom user notes, price levels, "
+        "and photos from a public Google Maps shared list link (maps.app.goo.gl or playlist URL)."
+    ),
+)
+def get_maps_list_tool(
+    url: Annotated[
+        str,
+        Field(description="Public/shared Google Maps list link (e.g. https://maps.app.goo.gl/PyTE2vs6cQ7mvVLx5)"),
+    ],
+    enrich: Annotated[
+        bool | None,
+        Field(description="If true, enriches details using Google Places API (requires API key)"),
+    ] = False,
+    limit: Annotated[
+        int | None,
+        Field(description="Maximum number of places to retrieve from the raw list data. Default is 500", ge=1, le=500),
+    ] = 500,
+    user_location: Annotated[
+        str | None,
+        Field(description="User location coordinates (e.g., '48.8566,2.3522') or address (e.g., 'Paris, France') to sort results by distance"),
+    ] = None,
+    top_n: Annotated[
+        int | None,
+        Field(description="If specified, filters and returns only the top N closest places (only these will be enriched)"),
+    ] = None,
+) -> str:
+    api_key = os.environ.get("GOOGLE_MAPS_API_KEY") or os.environ.get("GOOGLE_PLACES_API_KEY")
+    if enrich and not api_key:
+        return "Error: Enrichment requested but no Google Places API key found."
+        
+    try:
+        list_id = resolve_list_id(url)
+        if not list_id:
+            return "Error: Could not resolve a Google Maps list ID from the provided URL."
+            
+        raw_data = fetch_list_data(list_id, limit=limit or 500)
+        if not raw_data:
+            return "Error: Failed to fetch list content from Google Maps."
+            
+        api_key_to_use = api_key if enrich else None
+        parsed_data = parse_places(
+            raw_data,
+            api_key=api_key_to_use,
+            user_location=user_location,
+            top_n=top_n
+        )
+        if not parsed_data:
+            return "Error: Failed to parse place details."
+            
+        import json
+        return json.dumps(parsed_data, indent=2)
+    except Exception as e:
+        return f"Error extracting maps list: {str(e)}"
+
+
 @mcp.custom_route("/", methods=["GET"])
 async def root(_request: Request) -> PlainTextResponse:
     return PlainTextResponse("resto-mcp is running. POST /mcp")
@@ -146,9 +263,44 @@ class RejectMcpGet:
         await self.app(scope, receive, send)
 
 
-# Built last: streamable_http_app() snapshots the routes registered so far.
-app = mcp.streamable_http_app()
-app.add_middleware(RejectMcpGet)
+# Built last: snapshot both SSE and streamable-HTTP apps.
+streamable_app = mcp.streamable_http_app()
+streamable_app.add_middleware(RejectMcpGet)
+
+sse_app = mcp.sse_app()
+
+from starlette.middleware.cors import CORSMiddleware
+for sub_app in (streamable_app, sse_app):
+    sub_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"]
+    )
+
+
+class CombinedASGIApp:
+    def __init__(self, sse, streamable):
+        self.sse = sse
+        self.streamable = streamable
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "lifespan":
+            # Delegate lifespan startup/shutdown to both apps
+            # We want streamable_app to run first so session manager starts
+            await self.streamable(scope, receive, send)
+            return
+        
+        path = scope.get("path", "")
+        if path.startswith("/sse") or path.startswith("/messages"):
+            await self.sse(scope, receive, send)
+        else:
+            await self.streamable(scope, receive, send)
+
+
+app = CombinedASGIApp(sse_app, streamable_app)
 
 
 def main() -> None:

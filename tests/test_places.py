@@ -64,7 +64,7 @@ async def test_maps_a_places_response_into_the_carousels_restaurant_shape(stub_p
     assert r["userRatingsTotal"] == 900
     assert r["priceLevel"] == 3
     assert r["openNow"] is True
-    assert "places/place-1/photos/xyz/media?maxWidthPx=500" in r["photoUrl"]
+    assert "places%2Fplace-1%2Fphotos%2Fxyz%2Fmedia%3FmaxWidthPx%3D500" in r["photoUrl"]
 
 
 async def test_fills_in_defaults_for_sparse_places(stub_places):
