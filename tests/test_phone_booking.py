@@ -13,6 +13,7 @@ from phone_booking import (
     _normalise_phone,
     get_conversation_summary,
     wait_for_conversation_summary,
+    check_active_call,
 )
 
 
@@ -348,4 +349,32 @@ def test_wait_for_conversation_summary_polls_and_finds_match(monkeypatch):
     assert detail_called == 1
     assert res["summary"] == "Summary"
     assert res["reservation_confirmed"] is True
+
+
+def test_check_active_call_returns_id_if_in_progress(monkeypatch):
+    import time
+    now_epoch = time.time()
+
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def get(self, url, **kwargs):
+            class ListResponse:
+                status_code = 200
+                def json(self):
+                    return {
+                        "conversations": [
+                            {
+                                "conversation_id": "conv-active",
+                                "start_time_unix_secs": now_epoch - 30,
+                                "status": "in_progress"
+                            }
+                        ]
+                    }
+            return ListResponse()
+
+    monkeypatch.setattr("phone_booking.httpx.Client", FakeClient)
+    res = check_active_call("agent-123", api_key="test-key")
+    assert res == "conv-active"
 

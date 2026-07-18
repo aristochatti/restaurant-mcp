@@ -376,3 +376,31 @@ def wait_for_conversation_summary(
 
     return {"error": f"Timed out after {max_wait}s waiting for conversation to complete"}
 
+
+def check_active_call(agent_id: str, api_key: str | None = None) -> str | None:
+    """Check if there is an active call in progress for this agent.
+    Returns the conversation_id of the active call, or None.
+    """
+    api_key = api_key or os.environ.get("ELEVENLABS_API_KEY")
+    if not api_key:
+        return None
+    try:
+        with httpx.Client(timeout=10) as client:
+            resp = client.get(
+                _CONVERSATIONS_URL,
+                headers={"xi-api-key": api_key},
+                params={"agent_id": agent_id, "page_size": 5},
+            )
+        if resp.status_code == 200:
+            conversations = resp.json().get("conversations", [])
+            for conv in conversations:
+                status = conv.get("status", "")
+                if status not in ("done", "failed"):
+                    import time
+                    start_time = conv.get("start_time_unix_secs", 0)
+                    if time.time() - start_time < 300:  # 5 minutes lookback
+                        return conv.get("conversation_id")
+    except Exception:
+        pass
+    return None
+

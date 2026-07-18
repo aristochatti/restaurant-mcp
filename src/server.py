@@ -336,6 +336,34 @@ def call_restaurant_for_booking(
         Field(description="Any dietary requirements or special requests (e.g. 'window table', 'gluten-free menu')"),
     ] = None,
 ) -> str:
+    agent_id = os.environ.get("ELEVENLABS_AGENT_ID")
+    if agent_id:
+        from phone_booking import check_active_call, wait_for_conversation_summary
+        active_conv_id = check_active_call(agent_id)
+        if active_conv_id:
+            # A call is already in progress! Block and wait for it to complete instead of starting a new one.
+            import time
+            called_at = time.time()
+            summary_result = wait_for_conversation_summary(
+                agent_id=agent_id,
+                called_at_epoch=called_at - 180,  # Look back up to 3 minutes
+                poll_interval=5,
+                max_wait=180
+            )
+            import json
+            return json.dumps({
+                "success": True,
+                "message": "⚠️ A booking call was already active and in progress. We blocked and waited for its completion.",
+                "details": {
+                    "restaurant_name": restaurant_name,
+                    "guest_name": guest_name,
+                    "date": date,
+                    "time_start": time_start,
+                    "pax": pax
+                },
+                "post_call_analysis": summary_result
+            }, indent=2)
+
     # Default time_end to 1.5 hours after time_start if not provided
     if not time_end:
         try:
