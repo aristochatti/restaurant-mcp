@@ -106,8 +106,7 @@ async def search_restaurants_tool(
         return [TextContent(type="text", text=f'No restaurants found in "{location}".')]
 
     # Render using visualizer (module 3)
-    # Use relative base URL for proxy - MCP clients should resolve this correctly
-    html_content = build_carousel_html(location, restaurants, "/")
+    html_content = build_carousel_html(location, restaurants)
     
     # Create proper EmbeddedResource with TextResourceContents
     resource_content = TextResourceContents(
@@ -158,7 +157,7 @@ async def get_maps_list_tool(
     list_name = url.split("/")[-1] if url else "Google Maps List"
     
     # Render using visualizer (module 3)
-    html_content = build_carousel_html(list_name, restaurants, "/")
+    html_content = build_carousel_html(list_name, restaurants)
     
     # Create proper EmbeddedResource with TextResourceContents
     resource_content = TextResourceContents(
@@ -201,7 +200,7 @@ async def visualize_restaurants_tool(
         return [TextContent(type="text", text="No restaurants provided to visualize.")]
     
     # Render using visualizer (module 3)
-    html_content = build_carousel_html(title, restaurants, "/")
+    html_content = build_carousel_html(title, restaurants)
     
     # Create proper EmbeddedResource with TextResourceContents
     resource_content = TextResourceContents(

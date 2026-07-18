@@ -2,8 +2,13 @@ import re
 from datetime import datetime, timedelta
 import httpx
 import pytest
+import sys
+from pathlib import Path
 
-from resto_mcp.booking import (
+# Add src directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from booking import (
     parse_date,
     extract_emails,
     extract_zenchef_id,

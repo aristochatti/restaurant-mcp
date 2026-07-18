@@ -132,7 +132,9 @@ async def test_tool_call_returns_ui_resource(client, monkeypatch):
             }
         ]
 
-    monkeypatch.setattr(server, "search_restaurants", fake_search)
+    # Need to patch places.search_restaurants since server imports from places
+    import places
+    monkeypatch.setattr(places, "search_restaurants", fake_search)
 
     res = await rpc(
         client,
@@ -172,7 +174,7 @@ async def test_tools_list_exposes_get_maps_list_with_its_input_schema(client):
     tools = body["result"]["tools"]
     tool = next((t for t in tools if t["name"] == "get_maps_list"), None)
     assert tool, f"get_maps_list missing from: {[t['name'] for t in tools]}"
-    assert "shared list" in tool["description"].lower()
+    assert "google maps list" in tool["description"].lower()
     assert "url" in tool["inputSchema"]["required"]
     assert tool["inputSchema"]["properties"]["url"]["type"] == "string"
 
@@ -192,7 +194,9 @@ async def test_get_maps_list_tool_call(client, monkeypatch):
             }
         ]
 
-    monkeypatch.setattr(server, "fetch_from_list", fake_fetch_from_list)
+    # Need to patch lists.fetch_from_list since server imports from lists
+    import lists
+    monkeypatch.setattr(lists, "fetch_from_list", fake_fetch_from_list)
 
     res = await rpc(
         client,

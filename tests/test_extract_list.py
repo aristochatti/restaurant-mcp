@@ -1,5 +1,11 @@
 import pytest
-from scripts.extract_list import haversine_distance, resolve_coordinates, parse_places
+import sys
+from pathlib import Path
+
+# Add src directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from extract_list import haversine_distance, resolve_coordinates, parse_places
 
 def test_haversine_distance():
     # Paris coordinates: 48.8566, 2.3522
@@ -24,7 +30,7 @@ def test_parse_places_sorting_and_limiting(monkeypatch):
     def mock_resolve(loc, api_key):
         return 48.8566, 2.3522
     
-    monkeypatch.setattr("scripts.extract_list.resolve_coordinates", mock_resolve)
+    monkeypatch.setattr("extract_list.resolve_coordinates", mock_resolve)
 
     # Raw response from Maps EntityList containing:
     # 1. Place in Versailles (approx 17 km away)
