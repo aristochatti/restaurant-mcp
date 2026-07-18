@@ -12,6 +12,7 @@ FEATURES:
 
 from html import escape
 from typing import Any
+import random
 
 _STYLE = """
   :root { color-scheme: light; }
@@ -50,6 +51,71 @@ _STYLE = """
   .book:hover { background:#d1fae5; }
 """
 
+# List of food emojis to use instead of images
+FOOD_EMOJIS = [
+    "\U0001f355",  # Pizza
+    "\U0001f354",  # Hamburger
+    "\U0001f35f",  # French fries
+    "\U0001f35d",  # Spaghetti
+    "\U0001f371",  # Bacon
+    "\U0001f372",  # Pot of food
+    "\U0001f373",  # Cooking
+    "\U0001f356",  # Meat on bone
+    "\U0001f357",  # Poultry leg
+    "\U0001f358",  # Rice cracker
+    "\U0001f359",  # Rice ball
+    "\U0001f35a",  # Cooked rice
+    "\U0001f35b",  # Curry rice
+    "\U0001f35c",  # Steaming bowl
+    "\U0001f35e",  # Bread
+    "\U0001f360",  # Roasted sweet potato
+    "\U0001f361",  # Dango
+    "\U0001f362",  # Oden
+    "\U0001f363",  # Sushi
+    "\U0001f364",  # Fried shrimp
+    "\U0001f365",  # Fish cake with swirl
+    "\U0001f366",  # Soft ice cream
+    "\U0001f367",  # Shaved ice
+    "\U0001f368",  # Ice cream
+    "\U0001f369",  # Doughnut
+    "\U0001f36a",  # Cookie
+    "\U0001f36b",  # Chocolate bar
+    "\U0001f36c",  # Candy
+    "\U0001f36d",  # Lollipop
+    "\U0001f36e",  # Custard
+    "\U0001f36f",  # Honey pot
+    "\U0001f370",  # Shortcake
+    "\U0001f950",  # Croissant
+    "\U0001f951",  # Avocado
+    "\U0001f952",  # Cucumber
+    "\U0001f953",  # Bacon
+    "\U0001f954",  # Potato
+    "\U0001f955",  # Carrot
+    "\U0001f956",  # Baguette bread
+    "\U0001f957",  # Green salad
+    "\U0001f958",  # Pancakes
+    "\U0001f959",  # Stuffed flatbread
+    "\U0001f95a",  # Egg
+    "\U0001f95b",  # Glass of milk
+    "\U0001f95c",  # Peanuts
+    "\U0001f95d",  # Kiwi fruit
+    "\U0001f95e",  # Pomegranate
+    "\U0001f95f",  # Dumpling
+    "\U0001f960",  # Fortune cookie
+    "\U0001f961",  # Takeout box
+    "\U0001f9c0",  # Cheese wedge
+    "\U0001f9c1",  # Cupcake
+    "\U0001f9c2",  # Salt
+    "\U0001f9c3",  # Beverage box
+    "\U0001f9c4",  # Garlic
+    "\U0001f9c5",  # Onion
+    "\U0001f9c6",  # Falafel
+    "\U0001f9c7",  # Waffle
+    "\U0001f9c8",  # Butter
+    "\U0001f9c9",  # Mate
+    "\U0001f9ca",  # Ice
+]
+
 
 def _esc(value: Any) -> str:
     """HTML-escape, matching the JS original's handling of None as empty."""
@@ -79,8 +145,13 @@ def _stars(rating: float | None) -> str:
     if not rating:
         return ""
     full = round(rating)
-    out = "".join("[33m★[0m" if i <= full else "★" for i in range(1, 6))
+    out = "".join("[33m[0m" if i <= full else "" for i in range(1, 6))
     return f'<span class="stars">{out}</span><span class="rnum">{rating:.1f}</span>'
+
+
+def _get_random_food_emoji() -> str:
+    """Return a random food emoji."""
+    return random.choice(FOOD_EMOJIS)
 
 
 
@@ -89,7 +160,7 @@ def _card(r: dict[str, Any]) -> str:
     Render a single restaurant card.
     
     Basic view (always shown):
-    - Photo
+    - Photo (replaced with random food emoji)
     - Name
     - Address
     - Rating
@@ -101,17 +172,14 @@ def _card(r: dict[str, Any]) -> str:
     - Menu
     - Direct booking
     """
-    photo_url = r.get("photoUrl")
-    if photo_url:
-        # Use img tag with crossorigin for better CORS handling
-        img = f'<div class="photo"><img src="{_esc_url(photo_url)}" alt="Restaurant photo" onerror="this.style.display=\'none\'"></div>'
-    else:
-        img = '<div class="photo ph">🍽️</div>'
+    # Use random food emoji instead of photo URL
+    food_emoji = _get_random_food_emoji()
+    img = f'<div class="photo ph">{food_emoji}</div>'
 
     price_level = r.get("priceLevel")
     # Handle both numeric and string price levels (e.g., "$$" or 2)
     if isinstance(price_level, (int, float)):
-        price = "€" * int(price_level) if price_level else ""
+        price = "\u20ac" * int(price_level) if price_level else ""
     elif isinstance(price_level, str):
         # Map common string formats to numeric
         price_map = {"$": 1, "$$": 2, "$$$": 3, "$$$$": 4,
@@ -119,7 +187,7 @@ def _card(r: dict[str, Any]) -> str:
                      "PRICE_LEVEL_INEXPENSIVE": 1, "PRICE_LEVEL_MODERATE": 2,
                      "PRICE_LEVEL_EXPENSIVE": 3, "PRICE_LEVEL_VERY_EXPENSIVE": 4}
         price_int = price_map.get(price_level.lower().strip("$ "), None)
-        price = "€" * price_int if price_int else ""
+        price = "\u20ac" * price_int if price_int else ""
     else:
         price = ""
 
@@ -163,16 +231,16 @@ def build_carousel_html(location: str, restaurants: list[dict[str, Any]]) -> str
             - address: Full address
             - rating: Float rating (1-5)
             - userRatingsTotal: Number of ratings
-            - priceLevel: Integer (1-4) for € symbols
+            - priceLevel: Integer (1-4) for \u20ac symbols
             - openNow: Boolean for open/closed tag
-            - photoUrl: URL for restaurant photo
+            - photoUrl: URL for restaurant photo (not used anymore, replaced with emoji)
             - placeId: Google Places ID (for deep links)
     
     Returns:
         Complete HTML string for mcp-ui rendering
     """
     cards = "".join(_card(r) for r in restaurants)
-    header_note = f"{len(restaurants)} places · scroll to browse →"
+    header_note = f"{len(restaurants)} places \u00b7 scroll to browse \u2192"
     
     return f"""<!doctype html><html><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
