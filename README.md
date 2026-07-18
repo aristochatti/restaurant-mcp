@@ -4,6 +4,8 @@ MCP server that searches restaurants via **Google Places** and returns an intera
 
 Python 3.14 · [FastMCP](https://github.com/modelcontextprotocol/python-sdk) · [uv](https://docs.astral.sh/uv/)
 
+Live demo -> https://www.youtube.com/watch?v=2k0QMIKgt1g
+
 ## Run locally
 ```bash
 uv python install 3.14
