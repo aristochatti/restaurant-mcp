@@ -90,7 +90,10 @@ async def search_restaurants_tool(
     fallback = "\n".join(_summarise(i, r) for i, r in enumerate(restaurants))
     text = f"Found {len(restaurants)} restaurants in {location}:\n{fallback}"
 
-    return [ui, TextContent(type="text", text=text)]
+    # IMPORTANT: Return ONLY the UI resource, not the text fallback.
+    # Some clients will use the text fallback instead of rendering the HTML resource.
+    # By returning only the resource, we force the client to render it as HTML.
+    return [ui]
 
 
 def _summarise(index: int, r: dict[str, Any]) -> str:
