@@ -139,13 +139,14 @@ async def test_tool_call_returns_a_ui_resource_and_a_text_fallback(client, monke
     content = body["result"]["content"]
     ui = next(c for c in content if c["type"] == "resource")
     assert ui["resource"]["uri"].startswith("ui://restaurants/")
-    assert ui["resource"]["mimeType"] == "text/html"
+    # The mimeType should be text/html;profile=mcp-app to signal MCP-UI support
+    assert ui["resource"]["mimeType"] == "text/html;profile=mcp-app"
     assert "Where to eat in Rome" in ui["resource"]["text"]
     assert "Trattoria Da Enzo" in ui["resource"]["text"]
 
     text = next(c for c in content if c["type"] == "text")
     assert "Found 1 restaurants in Rome" in text["text"]
-    assert "1. Trattoria Da Enzo · ★4.5 · €€ — Via dei Vascellari 29, Roma" in text["text"]
+    assert "1. Trattoria Da Enzo \u00b7 \u26054.5 \u00b7 \u20ac\u20ac \u2014 Via dei Vascellari 29, Roma" in text["text"]
 
 
 async def test_public_host_is_accepted_not_421(client):

@@ -5,9 +5,8 @@ import httpx
 import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import ContentBlock, TextContent
-from mcp_ui_server import create_ui_resource
-from pydantic import Field
+from mcp.types import ContentBlock, EmbeddedResource, TextContent, TextResourceContents
+from pydantic import AnyUrl, Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
 
@@ -41,6 +40,23 @@ mcp = FastMCP(
 )
 
 
+def _create_ui_resource(uri: str, html: str) -> EmbeddedResource:
+    """Create a UI resource with the correct mimeType for MCP-UI.
+    
+    The mimeType 'text/html;profile=mcp-app' signals to the client that this
+    is an MCP-UI resource that should be rendered as HTML in a canvas/iframe,
+    rather than being parsed as text.
+    """
+    return EmbeddedResource(
+        type="resource",
+        resource=TextResourceContents(
+            uri=AnyUrl(uri),
+            mimeType="text/html;profile=mcp-app",
+            text=html,
+        ),
+    )
+
+
 @mcp.tool(
     name="search_restaurants",
     title="Search restaurants",
@@ -65,11 +81,10 @@ async def search_restaurants_tool(
     if not restaurants:
         return [TextContent(type="text", text=f'No restaurants found in "{location}".')]
 
-    ui = create_ui_resource({
-        "uri": f"ui://restaurants/{location}",
-        "content": {"type": "rawHtml", "htmlString": build_carousel_html(location, restaurants)},
-        "encoding": "text"
-    })
+    ui = _create_ui_resource(
+        f"ui://restaurants/{location}",
+        build_carousel_html(location, restaurants)
+    )
 
     # Text fallback for hosts that don't render mcp-ui.
     fallback = "\n".join(_summarise(i, r) for i, r in enumerate(restaurants))
@@ -79,9 +94,9 @@ async def search_restaurants_tool(
 
 
 def _summarise(index: int, r: dict[str, Any]) -> str:
-    price = " · " + "€" * r["priceLevel"] if r.get("priceLevel") else ""
-    rating = f" · ★{r['rating']}" if r.get("rating") else ""
-    return f"{index + 1}. {r['name']}{rating}{price} — {r['address']}"
+    price = " \u00b7 " + "\u20ac" * r["priceLevel"] if r.get("priceLevel") else ""
+    rating = f" \u00b7 \u2605{r['rating']}" if r.get("rating") else ""
+    return f"{index + 1}. {r['name']}{rating}{price} \u2014 {r['address']}"
 
 
 @mcp.custom_route("/", methods=["GET"])
