@@ -25,8 +25,8 @@ def _transport_security() -> TransportSecuritySettings:
     """FastMCP defaults allowed_hosts to localhost only, with DNS-rebinding
     protection on. Behind Alpic the Host header is the public domain, so that
     default would 421 every request. Rebinding protection exists to stop a
-    malicious page from reaching a server bound to the user's loopback — not a
-    threat model a public MCP endpoint sits in — so it's off unless you pin
+    malicious page from reaching a server bound to the user's loopback  not a
+    threat model a public MCP endpoint sits in  so it's off unless you pin
     hosts explicitly via MCP_ALLOWED_HOSTS (comma-separated, ':*' wildcards ok).
     """
     allowed = [h.strip() for h in os.environ.get("MCP_ALLOWED_HOSTS", "").split(",") if h.strip()]
@@ -39,7 +39,7 @@ def _transport_security() -> TransportSecuritySettings:
     )
 
 
-# Stateless Streamable HTTP — each request stands alone (simple + Alpic-friendly).
+# Stateless Streamable HTTP  each request stands alone (simple + Alpic-friendly).
 mcp = FastMCP(
     "resto-mcp",
     stateless_http=True,
@@ -57,6 +57,8 @@ def _create_ui_resource(uri: str, html: str) -> EmbeddedResource:
     
     IMPORTANT: Mistral Vibe expects the HTML to be in the 'text' field of the
     resource, and it will render it in a canvas when the mimeType is text/html.
+    
+    We also add metadata to explicitly signal that this should be rendered in a canvas.
     """
     return EmbeddedResource(
         type="resource",
@@ -64,6 +66,11 @@ def _create_ui_resource(uri: str, html: str) -> EmbeddedResource:
             uri=AnyUrl(uri),
             mimeType="text/html",
             text=html,
+            meta={
+                "ui": {
+                    "renderAs": "canvas"
+                }
+            }
         ),
     )
 
@@ -123,7 +130,7 @@ def _summarise(index: int, r: dict[str, Any]) -> str:
 def investigate_restaurant_booking_tool(
     restaurant: Annotated[
         str,
-        Field(description="Name and optional location of the restaurant (e.g. 'Septime Paris' or 'La Démocratie, Paris')"),
+        Field(description="Name and optional location of the restaurant (e.g. 'Septime Paris' or 'La D\u00e9mocratie, Paris')"),
     ],
     date: Annotated[
         str | None,
@@ -255,7 +262,7 @@ class RejectMcpGet:
     """Answer GET /mcp with 405 instead of opening an SSE stream.
 
     Streamable HTTP allows GET for server->client push, but we run stateless, so
-    such a stream can never carry anything — it would just pin a connection open
+    such a stream can never carry anything  it would just pin a connection open
     forever. Kept as pure ASGI rather than BaseHTTPMiddleware, which buffers
     responses and would break the SSE streaming that POST /mcp relies on.
     """
