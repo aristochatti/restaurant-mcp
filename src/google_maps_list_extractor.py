@@ -10,10 +10,11 @@ import json
 import os
 import sys
 
-# Ensure scripts directory is in sys.path so we can import extract_list
+# Ensure src directory is in sys.path so we can import extract_list
 script_dir = os.path.dirname(os.path.abspath(__file__))
-if script_dir not in sys.path:
-    sys.path.append(script_dir)
+parent_dir = os.path.dirname(script_dir)
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
 
 from extract_list import resolve_list_id, fetch_list_data, parse_places
 

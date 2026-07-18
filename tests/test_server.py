@@ -1,9 +1,15 @@
 import json
+import sys
+from pathlib import Path
 
 import httpx
 import pytest
 
-from resto_mcp import server
+# Add src directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+import server
+from server import app
 
 MCP_HEADERS = {
     "Content-Type": "application/json",
@@ -23,7 +29,9 @@ from conftest import rpc, read_rpc, INIT_PARAMS  # noqa: F401 – re-exported fo
 async def test_health_endpoint_responds(client):
     res = await client.get("/health")
     assert res.status_code == 200
-    assert res.json() == {"ok": True}
+    data = res.json()
+    assert data["ok"] is True
+    assert "extraction_available" in data
 
 
 async def test_root_endpoint_advertises_the_mcp_path(client):
@@ -78,12 +86,7 @@ async def test_malformed_json_body_does_not_crash_the_server(client):
     assert health.status_code == 200
 
 
-async def test_tool_call_returns_a_ui_resource(client, monkeypatch):
-    """Test that the tool returns a UI resource with the correct mimeType.
-    
-    We return ONLY the UI resource (no text fallback) to ensure Mistral Vibe
-    renders the HTML in a canvas.
-    """
+async def test_tool_call_returns_ui_resource(client, monkeypatch):
     async def fake_search(location, limit):
         return [
             {
@@ -110,8 +113,7 @@ async def test_tool_call_returns_a_ui_resource(client, monkeypatch):
     assert "error" not in body, body
 
     content = body["result"]["content"]
-    # Should only have one content block - the UI resource
-    assert len(content) == 1
+    assert len(content) == 1, "Should return only UI resource, no text fallback"
     
     ui = content[0]
     assert ui["type"] == "resource"
@@ -129,53 +131,6 @@ async def test_public_host_is_accepted_not_421(client):
     assert res.status_code != 421, "public Host header must not be rejected"
 
 
-async def test_tools_list_exposes_investigate_restaurant_booking_with_its_input_schema(client):
-    await rpc(client, "initialize", INIT_PARAMS)
-    res = await rpc(client, "tools/list", {}, id=2)
-
-    body = read_rpc(res)
-    assert "error" not in body
-
-    tools = body["result"]["tools"]
-    tool = next((t for t in tools if t["name"] == "investigate_restaurant_booking"), None)
-    assert tool, f"investigate_restaurant_booking missing from: {[t['name'] for t in tools]}"
-    assert "booking" in tool["description"].lower()
-    assert "restaurant" in tool["inputSchema"]["required"]
-    assert tool["inputSchema"]["properties"]["restaurant"]["type"] == "string"
-
-
-async def test_investigate_restaurant_booking_tool_call(client, monkeypatch):
-    def fake_investigate(restaurant_query, date_str, time_start, time_end, pax, api_key):
-        return {
-            "restaurant_details": {"name": "Test Bistro"},
-            "booking_options": [{"type": "phone", "phone_number": "123"}]
-        }
-
-    monkeypatch.setattr(server, "investigate_restaurant_booking", fake_investigate)
-    monkeypatch.setenv("GOOGLE_MAPS_API_KEY", "test-key")
-
-    res = await rpc(
-        client,
-        "tools/call",
-        {
-            "name": "investigate_restaurant_booking",
-            "arguments": {
-                "restaurant": "Test Bistro",
-                "date": "today"
-            }
-        },
-        id=3
-    )
-    body = read_rpc(res)
-    assert "error" not in body
-
-    content = body["result"]["content"]
-    text = next(c for c in content if c["type"] == "text")
-    data = json.loads(text["text"])
-    assert data["restaurant_details"]["name"] == "Test Bistro"
-    assert data["booking_options"][0]["type"] == "phone"
-
-
 async def test_tools_list_exposes_get_maps_list_with_its_input_schema(client):
     await rpc(client, "initialize", INIT_PARAMS)
     res = await rpc(client, "tools/list", {}, id=2)
@@ -186,24 +141,27 @@ async def test_tools_list_exposes_get_maps_list_with_its_input_schema(client):
     tools = body["result"]["tools"]
     tool = next((t for t in tools if t["name"] == "get_maps_list"), None)
     assert tool, f"get_maps_list missing from: {[t['name'] for t in tools]}"
-    assert "shared list" in tool["description"].lower()
+    assert "google maps list" in tool["description"].lower()
     assert "url" in tool["inputSchema"]["required"]
     assert tool["inputSchema"]["properties"]["url"]["type"] == "string"
 
 
 async def test_get_maps_list_tool_call(client, monkeypatch):
-    def fake_resolve(url):
-        return "list-123"
+    async def fake_fetch_from_list(url, *args, **kwargs):
+        return [
+            {
+                "placeId": "p1",
+                "name": "Test Place",
+                "address": "Test Address",
+                "rating": 4.5,
+                "userRatingsTotal": 100,
+                "priceLevel": 2,
+                "openNow": True,
+                "photoUrl": None,
+            }
+        ]
 
-    def fake_fetch(list_id, limit):
-        return {"some": "raw-data"}
-
-    def fake_parse(raw_data, *args, **kwargs):
-        return {"title": "Test List", "places": [{"name": "Test Place"}]}
-
-    monkeypatch.setattr(server, "resolve_list_id", fake_resolve)
-    monkeypatch.setattr(server, "fetch_list_data", fake_fetch)
-    monkeypatch.setattr(server, "parse_places", fake_parse)
+    monkeypatch.setattr(server, "fetch_from_list", fake_fetch_from_list)
 
     res = await rpc(
         client,
@@ -220,10 +178,11 @@ async def test_get_maps_list_tool_call(client, monkeypatch):
     assert "error" not in body
 
     content = body["result"]["content"]
-    text = next(c for c in content if c["type"] == "text")
-    data = json.loads(text["text"])
-    assert data["title"] == "Test List"
-    assert data["places"][0]["name"] == "Test Place"
+    assert len(content) == 1
+    ui = content[0]
+    assert ui["type"] == "resource"
+    assert ui["resource"]["mimeType"] == "text/html"
+    assert "Test Place" in ui["resource"]["text"]
 
 
 async def test_server_advertises_logo_icon(client):

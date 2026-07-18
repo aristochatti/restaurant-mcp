@@ -12,7 +12,11 @@ import httpx
 import pytest
 from asgi_lifespan import LifespanManager
 
-from resto_mcp.server import app
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from server import app
 
 MCP_HEADERS = {
     "Content-Type": "application/json",

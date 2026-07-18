@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import httpx
 import pytest
 
-from resto_mcp.booking import (
+from booking import (
     parse_date,
     extract_emails,
     extract_zenchef_id,

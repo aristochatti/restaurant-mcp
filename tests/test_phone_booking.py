@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from resto_mcp.phone_booking import (
+from phone_booking import (
     initiate_booking_call,
     _normalise_phone,
     get_conversation_summary,
@@ -55,8 +55,11 @@ _BOOKING_KWARGS = dict(
 )
 
 
-def test_missing_credentials_returns_error():
+def test_missing_credentials_returns_error(monkeypatch):
     """Without env vars the function should return a descriptive error."""
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    monkeypatch.delenv("ELEVENLABS_AGENT_ID", raising=False)
+    monkeypatch.delenv("ELEVENLABS_PHONE_NUMBER_ID", raising=False)
     result = initiate_booking_call(
         **_BOOKING_KWARGS,
         elevenlabs_api_key=None,
@@ -107,7 +110,7 @@ def test_successful_call(monkeypatch):
             assert dvars["pax"] == "2"
             return FakeResponse()
 
-    monkeypatch.setattr("resto_mcp.phone_booking.httpx.Client", FakeClient)
+    monkeypatch.setattr("phone_booking.httpx.Client", FakeClient)
 
     result = initiate_booking_call(
         **_BOOKING_KWARGS,
@@ -144,7 +147,7 @@ def test_api_error_response(monkeypatch):
         def post(self, url, **kwargs):
             return FakeResponse()
 
-    monkeypatch.setattr("resto_mcp.phone_booking.httpx.Client", FakeClient)
+    monkeypatch.setattr("phone_booking.httpx.Client", FakeClient)
 
     result = initiate_booking_call(
         **_BOOKING_KWARGS,
@@ -171,7 +174,7 @@ def test_timeout_returns_error(monkeypatch):
         def post(self, url, **kwargs):
             raise httpx.TimeoutException("timed out")
 
-    monkeypatch.setattr("resto_mcp.phone_booking.httpx.Client", FakeClient)
+    monkeypatch.setattr("phone_booking.httpx.Client", FakeClient)
 
     result = initiate_booking_call(
         **_BOOKING_KWARGS,
@@ -188,7 +191,7 @@ def test_timeout_returns_error(monkeypatch):
 # MCP tool schema test (via test_server fixture)
 # ---------------------------------------------------------------------------
 
-import resto_mcp.server as server
+import server
 from conftest import rpc, read_rpc, INIT_PARAMS
 
 
@@ -275,7 +278,7 @@ def test_get_conversation_summary_success(monkeypatch):
             assert "conversations/conv-123" in url
             return FakeResponse()
 
-    monkeypatch.setattr("resto_mcp.phone_booking.httpx.Client", FakeClient)
+    monkeypatch.setattr("phone_booking.httpx.Client", FakeClient)
     res = get_conversation_summary("conv-123", api_key="test-key")
     assert res["status"] == "done"
     assert res["duration_seconds"] == 45
@@ -329,7 +332,7 @@ def test_wait_for_conversation_summary_polls_and_finds_match(monkeypatch):
                         }
                 return ListResponse()
 
-    monkeypatch.setattr("resto_mcp.phone_booking.httpx.Client", FakeClient)
+    monkeypatch.setattr("phone_booking.httpx.Client", FakeClient)
     # Patch time.sleep so the test runs instantly
     monkeypatch.setattr("time.sleep", lambda s: None)
 
