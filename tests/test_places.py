@@ -67,6 +67,7 @@ async def test_maps_a_places_response_into_the_carousels_restaurant_shape(stub_p
     assert "places.googleapis.com/v1/places/place-1/photos/xyz/media" in r["photoUrl"]
     assert "maxWidthPx=500" in r["photoUrl"]
     assert "key=test-key" in r["photoUrl"]
+    assert r["photoName"] == "places/place-1/photos/xyz"
 
 
 async def test_fills_in_defaults_for_sparse_places(stub_places):
@@ -79,6 +80,7 @@ async def test_fills_in_defaults_for_sparse_places(stub_places):
     assert r["rating"] is None
     assert r["priceLevel"] is None
     assert r["photoUrl"] is None
+    assert r["photoName"] is None
 
 
 async def test_returns_an_empty_list_when_places_returns_no_results(stub_places):

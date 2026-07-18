@@ -4,6 +4,7 @@ Requires GOOGLE_MAPS_API_KEY in env with "Places API (New)" enabled.
 """
 
 import base64
+import json
 import os
 from typing import Any
 
@@ -32,20 +33,43 @@ _PRICE_MAP = {
 }
 
 
-async def _fetch_image_as_base64(url: str) -> str | None:
-    """Fetch an image from a URL and return it as a base64 data URL."""
+async def _fetch_image_as_base64(photo_name: str, key: str) -> str | None:
+    """Fetch an image from Google Places and return it as a base64 data URL.
+    
+    The Google Places API v1 returns photo metadata (JSON) that contains the actual
+    image URL in the 'photoUri' field. We need to:
+    1. Fetch the photo metadata from the Places API
+    2. Extract the photoUri from the JSON response
+    3. Fetch the actual image from photoUri
+    4. Convert to base64 data URL
+    """
     try:
+        # First, get the photo metadata from Google Places API
+        photo_metadata_url = f"https://places.googleapis.com/v1/{photo_name}/media?maxWidthPx=500&key={key}"
+        
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(url)
+            # Fetch photo metadata
+            resp = await client.get(photo_metadata_url)
             if resp.is_error:
                 return None
             
-            content_type = resp.headers.get("content-type", "image/jpeg")
-            # Extract just the MIME type (e.g., "image/jpeg" from "image/jpeg; charset=utf-8")
+            # Parse the JSON response to get the actual image URL
+            photo_data = resp.json()
+            photo_uri = photo_data.get("photoUri")
+            if not photo_uri:
+                return None
+            
+            # Now fetch the actual image from the photoUri
+            img_resp = await client.get(photo_uri)
+            if img_resp.is_error:
+                return None
+            
+            content_type = img_resp.headers.get("content-type", "image/jpeg")
+            # Extract just the MIME type
             mime_type = content_type.split(";")[0] if content_type else "image/jpeg"
             
             # Encode to base64
-            b64 = base64.b64encode(resp.content).decode("utf-8")
+            b64 = base64.b64encode(img_resp.content).decode("utf-8")
             return f"data:{mime_type};base64,{b64}"
     except Exception:
         return None
@@ -89,15 +113,18 @@ async def search_restaurants(query: str, limit: int = 8, fetch_images: bool = Tr
     
     # Fetch images in parallel if requested
     if fetch_images:
+        import asyncio
+        
+        # Get photo names for each restaurant
         image_tasks = []
         for r in restaurant_list:
-            if r.get("photoUrl"):
-                image_tasks.append(_fetch_image_as_base64(r["photoUrl"]))
+            photo_name = r.get("photoName")
+            if photo_name:
+                image_tasks.append(_fetch_image_as_base64(photo_name, key))
             else:
                 image_tasks.append(None)
         
         # Wait for all image fetches to complete
-        import asyncio
         image_results = await asyncio.gather(*image_tasks)
         
         # Update photo URLs with base64 data (only if fetch succeeded)
@@ -112,7 +139,7 @@ def _to_restaurant(p: dict[str, Any], key: str) -> dict[str, Any]:
     photos = p.get("photos") or []
     photo_name = photos[0].get("name") if photos else None
     
-    # Generate direct Google Places photo URL
+    # Generate direct Google Places photo metadata URL
     direct_photo_url = (
         f"https://places.googleapis.com/v1/{photo_name}/media?maxWidthPx=500&key={key}"
         if photo_name
@@ -128,4 +155,5 @@ def _to_restaurant(p: dict[str, Any], key: str) -> dict[str, Any]:
         "priceLevel": _PRICE_MAP.get(p.get("priceLevel")),
         "openNow": (p.get("currentOpeningHours") or {}).get("openNow"),
         "photoUrl": direct_photo_url,
+        "photoName": photo_name,  # Store the photo name for image fetching
     }
