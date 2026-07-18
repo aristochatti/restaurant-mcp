@@ -16,7 +16,7 @@ SAMPLE = [
         "userRatingsTotal": 1820,
         "priceLevel": 2,
         "openNow": True,
-        "photoUrl": "https://example.com/photo.jpg",
+        "photoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTD_kDD036yCI6wlKvbejuswsnB2VpYhJFT7_-nI8UkFA&s=10",
     },
     {
         "placeId": None,
@@ -77,10 +77,10 @@ def test_view_and_book_button_removed():
     assert 'class="book"' not in html
 
 
-def test_uses_the_emoji_placeholder_when_there_is_no_photo():
+def test_uses_emoji_placeholders_instead_of_photos():
     html = build_carousel_html("Rome", SAMPLE)
-    assert 'class="photo ph"' in html
-    assert 'src="https://example.com/photo.jpg"' in html
+    assert html.count('class="photo ph"') == 2
+    assert 'src="https://example.com/photo.jpg"' not in html
 
 
 def test_handles_an_empty_restaurant_list_without_throwing():
@@ -89,8 +89,7 @@ def test_handles_an_empty_restaurant_list_without_throwing():
     assert 'class="card"' not in html
 
 
-def test_handles_base64_data_urls_without_escaping_data():
-    """Test that base64 data URLs are not HTML-escaped in the img src attribute."""
+def test_ignores_base64_photo_urls_in_favor_of_an_emoji():
     base64_data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
     sample_with_base64 = [
         {
@@ -107,14 +106,11 @@ def test_handles_base64_data_urls_without_escaping_data():
     
     html = build_carousel_html("Test", sample_with_base64)
     
-    # The base64 data should not be HTML-escaped
-    assert f"data:image/png;base64,{base64_data}" in html
-    # Make sure it's not escaped (e.g., + should not become %2B)
-    assert base64_data in html
+    assert f"data:image/png;base64,{base64_data}" not in html
+    assert 'class="photo ph"' in html
 
 
-def test_handles_regular_urls_properly():
-    """Test that regular URLs are still properly escaped."""
+def test_ignores_regular_photo_urls_in_favor_of_an_emoji():
     sample_with_url = [
         {
             "placeId": "test",
@@ -130,5 +126,5 @@ def test_handles_regular_urls_properly():
     
     html = build_carousel_html("Test", sample_with_url)
     
-    # Regular URLs should be in the HTML
-    assert "https://example.com/photo.jpg" in html
+    assert "https://example.com/photo.jpg" not in html
+    assert 'class="photo ph"' in html

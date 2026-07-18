@@ -64,4 +64,4 @@ Then ask: *"Where should I eat in Paris 11e?"* → the carousel renders automati
 - Giulia Buzzetti
 
 ## Tool
-`search_restaurants(location, limit?)` → mcp-ui carousel + text fallback.
+`search_restaurants(location, limit?)` → mcp-ui carousel + text fallback (up to 3 restaurants).

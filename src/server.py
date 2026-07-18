@@ -12,8 +12,11 @@ Exposes FOUR MCP tools:
 - book_restaurant: Generate booking links (external)
 """
 
+import asyncio
 import os
+from datetime import datetime
 from typing import Annotated, Any
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -43,6 +46,7 @@ from places import search_restaurants
 
 # 3. GOOGLE MAPS LISTS: Your saved lists extraction
 from lists import fetch_from_list, EXTRACTION_AVAILABLE
+from google_calendar import create_calendar_event
 
 
 # =============================================================================
@@ -285,6 +289,59 @@ async def book_restaurant_tool(
         booking_url = "https://www.google.com/maps/search/?" + urlencode({"api": 1, "query": query})
     
     return [TextContent(type="text", text=booking_url)]
+
+
+@mcp.tool(
+    name="add_reservation_to_calendar",
+    title="Add restaurant reservation to Google Calendar",
+    description=(
+        "Add a confirmed restaurant reservation directly to Google Calendar. "
+        "Use after the user has confirmed the restaurant, date, time, party size, and timezone."
+    ),
+)
+async def add_reservation_to_calendar_tool(
+    restaurant_name: Annotated[str, Field(description="Name of the restaurant")],
+    address: Annotated[str, Field(description="Full restaurant address")],
+    reservation_date: Annotated[str, Field(description="Reservation date in YYYY-MM-DD format")],
+    reservation_time: Annotated[str, Field(description="Reservation time in HH:MM 24-hour format")],
+    party_size: Annotated[int, Field(description="Number of people", ge=1)],
+    timezone_name: Annotated[
+        str,
+        Field(description="IANA timezone, such as Europe/Rome or America/New_York"),
+    ] = "Europe/Rome",
+) -> list[ContentBlock]:
+    try:
+        local_datetime = datetime.strptime(
+            f"{reservation_date} {reservation_time}", "%Y-%m-%d %H:%M"
+        ).replace(tzinfo=ZoneInfo(timezone_name))
+    except (ValueError, KeyError):
+        return [TextContent(type="text", text="Invalid reservation date, time, or timezone.")]
+
+    try:
+        event = await asyncio.to_thread(
+            create_calendar_event,
+            restaurant_name=restaurant_name,
+            address=address,
+            reservation_at=local_datetime,
+            party_size=party_size,
+        )
+    except Exception as error:
+        return [
+            TextContent(
+                type="text",
+                text=f"Could not add the reservation to Google Calendar: {error}",
+            )
+        ]
+
+    return [
+        TextContent(
+            type="text",
+            text=(
+                f"Added your reservation at {restaurant_name} to Google Calendar.\n"
+                f"{event.get('htmlLink', '')}"
+            ),
+        )
+    ]
 
 
 # =============================================================================
