@@ -89,12 +89,6 @@ def _card(r: dict[str, Any]) -> str:
     price_level = r.get("priceLevel")
     price = "€" * price_level if price_level else ""
 
-    if r.get("placeId"):
-        maps_url = f"https://www.google.com/maps/place/?q=place_id:{quote(str(r['placeId']), safe='')}"
-    else:
-        query = f"{r.get('name', '')} {r.get('address') or ''}"
-        maps_url = "https://www.google.com/maps/search/?" + urlencode({"api": 1, "query": query})
-
     open_now = r.get("openNow")
     if open_now is True:
         tag = '<span class="tag open">Open now</span>'
@@ -119,7 +113,6 @@ def _card(r: dict[str, Any]) -> str:
       <div class="rrow">{_stars(r.get("rating"))}{count}</div>
       <div class="actions">
         {tag}
-        <a class="book" href="{_esc(maps_url)}" target="_blank" rel="noopener">View &amp; book ↗</a>
       </div>
     </div>
   </div>"""
