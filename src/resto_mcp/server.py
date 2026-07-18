@@ -5,9 +5,8 @@ import httpx
 import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import ContentBlock, TextContent
-from mcp_ui_server import create_ui_resource
-from pydantic import Field
+from mcp.types import ContentBlock, EmbeddedResource, TextContent, TextResourceContents
+from pydantic import AnyUrl, Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
 
@@ -49,6 +48,26 @@ mcp = FastMCP(
 )
 
 
+def _create_ui_resource(uri: str, html: str) -> EmbeddedResource:
+    """Create a UI resource that Mistral Vibe will render as HTML in a canvas.
+    
+    For Mistral Vibe specifically, we use text/html mimeType and ensure
+    the HTML is self-contained. The key is to return ONLY this resource block
+    with NO text fallback, so Vibe has no choice but to render it.
+    
+    IMPORTANT: Mistral Vibe expects the HTML to be in the 'text' field of the
+    resource, and it will render it in a canvas when the mimeType is text/html.
+    """
+    return EmbeddedResource(
+        type="resource",
+        resource=TextResourceContents(
+            uri=AnyUrl(uri),
+            mimeType="text/html",
+            text=html,
+        ),
+    )
+
+
 @mcp.tool(
     name="search_restaurants",
     title="Search restaurants",
@@ -73,23 +92,23 @@ async def search_restaurants_tool(
     if not restaurants:
         return [TextContent(type="text", text=f'No restaurants found in "{location}".')]
 
-    ui = create_ui_resource({
-        "uri": f"ui://restaurants/{location}",
-        "content": {"type": "rawHtml", "htmlString": build_carousel_html(location, restaurants)},
-        "encoding": "text"
-    })
+    ui = _create_ui_resource(
+        f"ui://restaurants/{location}",
+        build_carousel_html(location, restaurants)
+    )
 
-    # Text fallback for hosts that don't render mcp-ui.
-    fallback = "\n".join(_summarise(i, r) for i, r in enumerate(restaurants))
-    text = f"Found {len(restaurants)} restaurants in {location}:\n{fallback}"
-
-    return [ui, TextContent(type="text", text=text)]
+    # IMPORTANT: Return ONLY the UI resource, no text fallback.
+    # Mistral Vibe will render the HTML resource in a canvas when:
+    # 1. It's the only content block returned
+    # 2. It has mimeType "text/html"
+    # 3. The HTML is self-contained (no external dependencies)
+    return [ui]
 
 
 def _summarise(index: int, r: dict[str, Any]) -> str:
-    price = " · " + "€" * r["priceLevel"] if r.get("priceLevel") else ""
-    rating = f" · ★{r['rating']}" if r.get("rating") else ""
-    return f"{index + 1}. {r['name']}{rating}{price} — {r['address']}"
+    price = " \u00b7 " + "\u20ac" * r["priceLevel"] if r.get("priceLevel") else ""
+    rating = f" \u00b7 \u2605{r['rating']}" if r.get("rating") else ""
+    return f"{index + 1}. {r['name']}{rating}{price} \u2014 {r['address']}"
 
 
 @mcp.tool(

@@ -110,7 +110,12 @@ async def test_malformed_json_body_does_not_crash_the_server(client):
     assert health.status_code == 200
 
 
-async def test_tool_call_returns_a_ui_resource_and_a_text_fallback(client, monkeypatch):
+async def test_tool_call_returns_a_ui_resource(client, monkeypatch):
+    """Test that the tool returns a UI resource with the correct mimeType.
+    
+    We return ONLY the UI resource (no text fallback) to ensure Mistral Vibe
+    renders the HTML in a canvas.
+    """
     async def fake_search(location, limit):
         return [
             {
@@ -137,15 +142,16 @@ async def test_tool_call_returns_a_ui_resource_and_a_text_fallback(client, monke
     assert "error" not in body, body
 
     content = body["result"]["content"]
-    ui = next(c for c in content if c["type"] == "resource")
+    # Should only have one content block - the UI resource
+    assert len(content) == 1
+    
+    ui = content[0]
+    assert ui["type"] == "resource"
     assert ui["resource"]["uri"].startswith("ui://restaurants/")
+    # The mimeType should be text/html
     assert ui["resource"]["mimeType"] == "text/html"
     assert "Where to eat in Rome" in ui["resource"]["text"]
     assert "Trattoria Da Enzo" in ui["resource"]["text"]
-
-    text = next(c for c in content if c["type"] == "text")
-    assert "Found 1 restaurants in Rome" in text["text"]
-    assert "1. Trattoria Da Enzo · ★4.5 · €€ — Via dei Vascellari 29, Roma" in text["text"]
 
 
 async def test_public_host_is_accepted_not_421(client):
