@@ -82,10 +82,11 @@ mcp = FastMCP(
     name="search_restaurants",
     title="Search Restaurants",
     description=(
-        "IMMEDIATELY display an interactive carousel of restaurants when user asks "
-        "'where to eat', 'find restaurants', 'show me places to eat', or similar. "
-        "ALWAYS return only the carousel visualization, NEVER add text commentary. "
-        "Fetch from Google Places API and render as clickable carousel UI."
+        "MANDATORY: When user asks for restaurants, places to eat, food recommendations, "
+        "or anything about finding restaurants - YOU MUST call this tool first. "
+        "DO NOT generate any text response. DO NOT say 'Here are restaurants...'. "
+        "Call this tool with the location and return ONLY the tool result (interactive carousel). "
+        "Trigger phrases: 'restaurant', 'where to eat', 'find me food', 'best places to eat', 'show restaurants'"
     ),
 )
 async def search_restaurants_tool(
@@ -126,10 +127,11 @@ async def search_restaurants_tool(
     name="get_maps_list",
     title="Get My Google Maps List",
     description=(
-        "IMMEDIATELY display a user's saved Google Maps list as interactive carousel. "
-        "Use when user says 'show my list', 'my saved places', or provides a maps.app.goo.gl URL. "
-        "ALWAYS return only the carousel visualization, NEVER add text commentary. "
-        "Extract from Google Maps shared list and render as clickable carousel UI."
+        "MANDATORY: When user provides a Google Maps list URL (maps.app.goo.gl or google.com/maps) "
+        "or asks about 'my list', 'saved places', 'my maps' - YOU MUST call this tool. "
+        "DO NOT generate any text response. DO NOT say 'Here is your list...'. "
+        "Call this tool with the URL and return ONLY the tool result (interactive carousel). "
+        "Trigger: any Google Maps URL or phrase containing 'my list', 'saved places', 'google maps list'"
     ),
 )
 async def get_maps_list_tool(
@@ -176,10 +178,12 @@ async def get_maps_list_tool(
     name="visualize_restaurants",
     title="Show Restaurant Carousel",
     description=(
-        "IMMEDIATELY display restaurant data as interactive carousel UI. "
-        "Use ONLY when you already have restaurant data in memory and user asks to 'show', 'display', or 'visualize' it. "
-        "ALWAYS return only the carousel visualization, NEVER add text commentary. "
-        "Do NOT use for new searches - use search_restaurants or get_maps_list instead."
+        "MANDATORY: When user says 'visualize', 'show', 'display' with restaurant data context - "
+        "YOU MUST call this tool. Use ONLY when you already have restaurant data. "
+        "DO NOT generate any text response. DO NOT say 'Here are the restaurants...' or 'visualized for you'. "
+        "Call this tool with the data and return ONLY the tool result (interactive carousel). "
+        "Trigger: 'visualize', 'show me', 'display' when restaurants are being discussed. "
+        "NEVER use for new searches - use search_restaurants or get_maps_list for those."
     ),
 )
 async def visualize_restaurants_tool(
@@ -217,9 +221,11 @@ async def visualize_restaurants_tool(
     name="book_restaurant",
     title="Open Booking Link",
     description=(
-        "When user wants to book a specific restaurant, provide a direct booking URL. "
-        "Use when user says 'book', 'reserve', 'make reservation' for a restaurant. "
-        "ALWAYS return only the booking link as text, no extra commentary."
+        "MANDATORY: When user says 'book', 'reserve', 'make a reservation', 'I want to book' "
+        "for a specific restaurant - YOU MUST call this tool. "
+        "DO NOT generate any text response except the URL itself. "
+        "DO NOT say 'Here is the booking link...' or add any commentary. "
+        "Call this tool and return ONLY the URL as plain text."
     ),
 )
 async def book_restaurant_tool(
