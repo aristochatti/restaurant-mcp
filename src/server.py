@@ -136,6 +136,7 @@ async def search_restaurants_tool(
     description=(
         "MANDATORY: When user provides a Google Maps list URL (maps.app.goo.gl or google.com/maps) "
         "or asks about 'my list', 'saved places', 'my maps' - YOU MUST call this tool. "
+        "Supports 'user_location' (coordinates 'lat,lon' or address) to sort results by distance and 'top_n' (integer) to limit results count. "
         "DO NOT generate any text response. DO NOT say 'Here is your list...'. "
         "Call this tool with the URL and return ONLY the tool result (interactive carousel). "
         "Trigger: any Google Maps URL or phrase containing 'my list', 'saved places', 'google maps list'"
