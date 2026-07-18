@@ -42,23 +42,32 @@ async def fetch_from_list(
     if not EXTRACTION_AVAILABLE:
         return []
     
-    # Get API key for enrichment
-    api_key = os.environ.get("GOOGLE_MAPS_API_KEY") if enrich else None
-    
+    # Geocoding key: needed to resolve named locations (e.g. "Paris, France") even
+    # when enrichment is disabled. Falls back gracefully if the key is absent —
+    # raw "lat,lon" strings still work without any key.
+    geo_api_key = os.environ.get("GOOGLE_MAPS_API_KEY") or os.environ.get("GOOGLE_PLACES_API_KEY")
+
+    # Enrichment key: only used when the caller explicitly requests price/photos.
+    enrich_api_key = geo_api_key if enrich else None
+
     # Step 1: Resolve list ID from URL
     list_id = resolve_list_id(url)
     if not list_id:
         return []
-    
-    # Step 2: Fetch raw list data
+
+    # Step 2: Fetch raw list data (always fetch all items so distance sorting is
+    # applied across the full list before slicing to top_n).
     raw_data = fetch_list_data(list_id)
     if not raw_data:
         return []
-    
-    # Step 3: Parse places (optionally sorted and enriched)
+
+    # Step 3: Parse places (optionally sorted and enriched).
+    # We always pass geo_api_key so named locations can be geocoded even when
+    # enrichment is off. parse_places uses it only for resolve_coordinates().
     parsed = parse_places(
         raw_data,
-        api_key=api_key if enrich else None,
+        api_key=enrich_api_key,
+        geo_api_key=geo_api_key,
         user_location=user_location,
         top_n=top_n
     )
@@ -75,6 +84,7 @@ async def fetch_from_list(
         # but if we enrich via Places API, we could add it. For now, leave as None.
         # The places.py module handles websiteUri from direct Places API calls.
         
+        distance_km = place.get("distance_km")  # None when no user_location given
         restaurants.append({
             "placeId": place.get("google_place_ids", [None])[0] if place.get("google_place_ids") else None,
             "name": place.get("name", "Unknown"),
@@ -84,7 +94,8 @@ async def fetch_from_list(
             "priceLevel": _normalize_price_level(place.get("price_level")),
             "openNow": None,  # Not in list data
             "photoUrl": place.get("photos", [None])[0] if place.get("photos") else None,
-            "websiteUrl": website_url,  # Will be None for now, populated by places.py
+            "websiteUrl": website_url,
+            "distanceKm": distance_km,  # populated when user_location is provided
         })
     
     return restaurants

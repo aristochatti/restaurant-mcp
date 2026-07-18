@@ -142,10 +142,14 @@ async def search_restaurants_tool(
     description=(
         "MANDATORY: When user provides a Google Maps list URL (maps.app.goo.gl or google.com/maps) "
         "or asks about 'my list', 'saved places', 'my maps' - YOU MUST call this tool. "
-        "Supports 'user_location' (coordinates 'lat,lon' or address) to sort results by distance and 'top_n' (integer) to limit results count. "
         "DO NOT generate any text response. DO NOT say 'Here is your list...'. "
         "Call this tool with the URL and return ONLY the tool result (interactive carousel). "
-        "Trigger: any Google Maps URL or phrase containing 'my list', 'saved places', 'google maps list'"
+        "Trigger: any Google Maps URL or phrase containing 'my list', 'saved places', 'google maps list'. "
+        "DISTANCE FILTERING: When the user asks for the 'N closest', 'nearest', or 'closest to me' places, "
+        "you MUST provide both 'user_location' (ask the user for their current location if unknown, "
+        "accept raw coordinates 'lat,lon' or a city/address string) AND 'top_n' (the requested count). "
+        "Without user_location, distance sorting is impossible and results will be in arbitrary order. "
+        "IMPORTANT: If the user asks for closest results but has not shared their location, ask for it before calling this tool."
     ),
 )
 async def get_maps_list_tool(
@@ -159,11 +163,25 @@ async def get_maps_list_tool(
     ] = False,
     user_location: Annotated[
         str | None,
-        Field(description="User location coordinates (e.g. '48.8566,2.3522') or address (e.g. 'Paris, France') to sort results by distance"),
+        Field(
+            description=(
+                "User's current location as raw coordinates 'lat,lon' (e.g. '48.8566,2.3522') "
+                "or a readable address/city (e.g. 'Milan, Italy'). "
+                "REQUIRED when sorting or filtering by distance. "
+                "Raw coordinates work even without a Google API key; "
+                "address strings are geocoded automatically when a key is configured."
+            )
+        ),
     ] = None,
     top_n: Annotated[
         int | None,
-        Field(description="If specified, filters and returns only the top N closest places"),
+        Field(
+            description=(
+                "Return only the N closest places after sorting by distance. "
+                "Only meaningful when user_location is also provided. "
+                "Example: top_n=10 with user_location='48.8566,2.3522' returns the 10 nearest places."
+            )
+        ),
     ] = None,
 ) -> list[ContentBlock]:
     """Extract from Google Maps list and render as carousel - returns ONLY EmbeddedResource."""

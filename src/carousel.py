@@ -54,6 +54,8 @@ _STYLE = """
   .map-btn { font-size:13px; font-weight:600; color:#1485ee; text-decoration:none;
              padding:6px 10px; border-radius:8px; background:#eef4ff; border:1px solid #bae6fd; }
   .map-btn:hover { background:#d9efff; }
+  .dist { font-size:11px; font-weight:600; color:#6366f1; background:#eef2ff;
+          padding:2px 8px; border-radius:999px; white-space:nowrap; }
 """
 
 # List of food emojis to use instead of images
@@ -221,6 +223,18 @@ def _card(r: dict[str, Any]) -> str:
     maps_url = _build_maps_url(r.get("address"))
     maps_btn = f'<a href="{_esc_url(maps_url)}" class="map-btn" target="_blank" rel="noopener noreferrer">Map</a>'
 
+    # Distance badge (only shown for list results sorted by distance)
+    distance_km = r.get("distanceKm")
+    if distance_km is not None:
+        try:
+            dist_val = float(distance_km)
+            dist_label = f"{dist_val:.1f} km away"
+        except (TypeError, ValueError):
+            dist_label = f"{distance_km} km away"
+        dist_badge = f'<span class="dist">📍 {dist_label}</span>'
+    else:
+        dist_badge = ""
+
     return f"""
   <div class="card">
     {img}
@@ -232,11 +246,12 @@ def _card(r: dict[str, Any]) -> str:
       <p class="meta">{_esc(r.get("address") or "")}</p>
       <div class="rrow">{_stars(r.get("rating"))}{count}</div>
       <div class="actions">
-        {tag}
+        {dist_badge}{tag}
         {maps_btn}
       </div>
     </div>
   </div>"""
+
 
 
 def build_carousel_html(location: str, restaurants: list[dict[str, Any]]) -> str:

@@ -201,6 +201,17 @@ def resolve_coordinates(location_str: str, api_key: str | None = None) -> tuple[
         except ValueError:
             pass
             
+    if not api_key:
+        # Cannot geocode a named address without a key. Raw "lat,lon" strings are
+        # already handled above, so if we reach here it means the caller passed a
+        # place name but no API key is configured.
+        print(
+            f"Warning: Cannot geocode '{location_str}' \u2014 no Google API key available. "
+            "Provide raw 'lat,lon' coordinates or set GOOGLE_MAPS_API_KEY / GOOGLE_PLACES_API_KEY.",
+            file=sys.stderr,
+        )
+        return None
+
     if api_key and location_str:
         url = "https://places.googleapis.com/v1/places:searchText"
         headers = {
@@ -233,9 +244,21 @@ def resolve_coordinates(location_str: str, api_key: str | None = None) -> tuple[
     return None
 
 
-def parse_places(api_response, api_key=None, user_location=None, top_n=None):
+def parse_places(api_response, api_key=None, geo_api_key=None, user_location=None, top_n=None):
     """
-    Parses the JSON response into a clean list of place objects, sorting by distance and limiting results if specified.
+    Parses the JSON response into a clean list of place objects, sorting by
+    distance and limiting results if specified.
+
+    Args:
+        api_response:  Raw JSON list from fetch_list_data().
+        api_key:       Google Places API key used for *enrichment* (price/photos).
+                       May be None when enrichment is not requested.
+        geo_api_key:   Google API key used *only* for geocoding a named
+                       user_location string (e.g. "Paris, France").  Raw
+                       "lat,lon" strings work without any key.  Falls back
+                       gracefully to None — sorting is simply skipped.
+        user_location: User location string ("lat,lon" or address) for sorting.
+        top_n:         If set, keep only the closest N places after sorting.
     """
     if not api_response or not isinstance(api_response, list) or len(api_response) == 0:
         return None
@@ -294,7 +317,11 @@ def parse_places(api_response, api_key=None, user_location=None, top_n=None):
             
         # 2. Sort by distance if user_location is provided
         if user_location:
-            user_coords = resolve_coordinates(user_location, api_key)
+            # Use geo_api_key for coordinate resolution; fall back to api_key
+            # (enrichment key) if geo_api_key is not separately provided.
+            # Raw "lat,lon" strings require no key at all.
+            key_for_geocoding = geo_api_key or api_key
+            user_coords = resolve_coordinates(user_location, key_for_geocoding)
             if user_coords:
                 user_lat, user_lon = user_coords
                 for place in list_metadata["places"]:

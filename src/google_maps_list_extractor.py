@@ -101,10 +101,13 @@ def main():
         sys.exit(1)
         
     print(f"Parsing places...", file=sys.stderr)
+    # api_key_to_use: only passed for enrichment (price/photos)
+    # geo_api_key: always passed so named --user-location strings can be geocoded
     api_key_to_use = api_key if args.enrich else None
     parsed_data = parse_places(
         raw_data,
         api_key=api_key_to_use,
+        geo_api_key=api_key,
         user_location=args.user_location,
         top_n=args.top_n
     )
