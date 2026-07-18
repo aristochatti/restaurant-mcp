@@ -23,7 +23,7 @@ INIT_PARAMS = {
 }
 
 
-from conftest import rpc, read_rpc, INIT_PARAMS  # noqa: F401 – re-exported for readability
+from conftest import rpc, read_rpc, INIT_PARAMS  # noqa: F401  re-exported for readability
 
 
 async def test_health_endpoint_responds(client):
@@ -87,6 +87,11 @@ async def test_malformed_json_body_does_not_crash_the_server(client):
 
 
 async def test_tool_call_returns_ui_resource(client, monkeypatch):
+    """Test that the tool returns a UI resource with the correct mimeType.
+    
+    We return a text instruction followed by the UI resource to ensure Mistral Vibe
+    renders the HTML in a canvas.
+    """
     async def fake_search(location, limit):
         return [
             {
@@ -113,9 +118,16 @@ async def test_tool_call_returns_ui_resource(client, monkeypatch):
     assert "error" not in body, body
 
     content = body["result"]["content"]
-    assert len(content) == 1, "Should return only UI resource, no text fallback"
+    # Should have two content blocks: instruction text and UI resource
+    assert len(content) == 2
     
-    ui = content[0]
+    # First block should be the instruction
+    instruction = content[0]
+    assert instruction["type"] == "text"
+    assert "canvas" in instruction["text"].lower()
+    
+    # Second block should be the UI resource
+    ui = content[1]
     assert ui["type"] == "resource"
     assert ui["resource"]["uri"].startswith("ui://restaurants/")
     # The mimeType should be text/html
@@ -178,8 +190,16 @@ async def test_get_maps_list_tool_call(client, monkeypatch):
     assert "error" not in body
 
     content = body["result"]["content"]
-    assert len(content) == 1
-    ui = content[0]
+    # Should have two content blocks: instruction text and UI resource
+    assert len(content) == 2
+    
+    # First block should be the instruction
+    instruction = content[0]
+    assert instruction["type"] == "text"
+    assert "canvas" in instruction["text"].lower()
+    
+    # Second block should be the UI resource
+    ui = content[1]
     assert ui["type"] == "resource"
     assert ui["resource"]["mimeType"] == "text/html"
     assert "Test Place" in ui["resource"]["text"]
@@ -200,5 +220,3 @@ async def test_logo_endpoint_serves_image(client):
     assert res.status_code == 200
     assert res.headers["content-type"] == "image/png"
     assert len(res.content) > 0
-
-
