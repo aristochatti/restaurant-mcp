@@ -80,11 +80,12 @@ mcp = FastMCP(
 
 @mcp.tool(
     name="search_restaurants",
-    title="Search restaurants",
+    title="Search Restaurants",
     description=(
-        "Search restaurants in a given location (city, neighborhood, or address) and "
-        "display them as an interactive carousel. Use whenever the user asks where to "
-        "eat or for restaurant recommendations."
+        "IMMEDIATELY display an interactive carousel of restaurants when user asks "
+        "'where to eat', 'find restaurants', 'show me places to eat', or similar. "
+        "ALWAYS return only the carousel visualization, NEVER add text commentary. "
+        "Fetch from Google Places API and render as clickable carousel UI."
     ),
 )
 async def search_restaurants_tool(
@@ -97,7 +98,7 @@ async def search_restaurants_tool(
         Field(description="How many restaurants to return (default 8)", ge=1, le=20),
     ] = None,
 ) -> list[ContentBlock]:
-    """Search via Google Places API and render as carousel."""
+    """Search via Google Places API and render as carousel - returns ONLY EmbeddedResource."""
     restaurants = await search_restaurants(location, limit or 8)
 
     if not restaurants:
@@ -122,10 +123,12 @@ async def search_restaurants_tool(
 
 @mcp.tool(
     name="get_maps_list",
-    title="Get Google Maps List",
+    title="Get My Google Maps List",
     description=(
-        "Extract places from a public Google Maps shared list (maps.app.goo.gl or google.com/maps/playlist) "
-        "and display them as an interactive carousel. Uses the extraction logic from scripts/."
+        "IMMEDIATELY display a user's saved Google Maps list as interactive carousel. "
+        "Use when user says 'show my list', 'my saved places', or provides a maps.app.goo.gl URL. "
+        "ALWAYS return only the carousel visualization, NEVER add text commentary. "
+        "Extract from Google Maps shared list and render as clickable carousel UI."
     ),
 )
 async def get_maps_list_tool(
@@ -138,7 +141,7 @@ async def get_maps_list_tool(
         Field(description="Enrich with price levels and photos from Google Places API"),
     ] = False,
 ) -> list[ContentBlock]:
-    """Extract from Google Maps list and render as carousel."""
+    """Extract from Google Maps list and render as carousel - returns ONLY EmbeddedResource."""
     if not EXTRACTION_AVAILABLE:
         return [TextContent(type="text", text="Google Maps list extraction not available.")]
     
@@ -170,10 +173,12 @@ async def get_maps_list_tool(
 
 @mcp.tool(
     name="visualize_restaurants",
-    title="Visualize Restaurants",
+    title="Show Restaurant Carousel",
     description=(
-        "Render a list of restaurants as an interactive carousel. Use this when you "
-        "already have restaurant data and only want visualization without fetching."
+        "IMMEDIATELY display restaurant data as interactive carousel UI. "
+        "Use ONLY when you already have restaurant data in memory and user asks to 'show', 'display', or 'visualize' it. "
+        "ALWAYS return only the carousel visualization, NEVER add text commentary. "
+        "Do NOT use for new searches - use search_restaurants or get_maps_list instead."
     ),
 )
 async def visualize_restaurants_tool(
@@ -186,7 +191,7 @@ async def visualize_restaurants_tool(
         Field(description="List of restaurant objects with: name, address, rating, userRatingsTotal, priceLevel, openNow, photoUrl, placeId, websiteUrl"),
     ],
 ) -> list[ContentBlock]:
-    """Render restaurant data as carousel without fetching."""
+    """Render restaurant data as carousel - returns ONLY EmbeddedResource, no text."""
     if not restaurants:
         return [TextContent(type="text", text="No restaurants provided to visualize.")]
     
@@ -209,10 +214,11 @@ async def visualize_restaurants_tool(
 
 @mcp.tool(
     name="book_restaurant",
-    title="Book Restaurant",
+    title="Open Booking Link",
     description=(
-        "Open a booking link for a restaurant. Currently opens external booking URLs "
-        "(Google Maps or restaurant website). Full API integration coming soon."
+        "When user wants to book a specific restaurant, provide a direct booking URL. "
+        "Use when user says 'book', 'reserve', 'make reservation' for a restaurant. "
+        "ALWAYS return only the booking link as text, no extra commentary."
     ),
 )
 async def book_restaurant_tool(
@@ -233,7 +239,7 @@ async def book_restaurant_tool(
         Field(description="Restaurant address for fallback search"),
     ] = None,
 ) -> list[ContentBlock]:
-    """Generate a booking link for a restaurant."""
+    """Generate a booking link - returns ONLY the URL as TextContent."""
     # Priority: website_url > place_id > name+address search
     if website_url:
         booking_url = website_url
@@ -250,10 +256,7 @@ async def book_restaurant_tool(
         query = " ".join(query_parts) if query_parts else "restaurant"
         booking_url = "https://www.google.com/maps/search/?" + urlencode({"api": 1, "query": query})
     
-    return [
-        TextContent(type="text", text=f"Open booking page: {booking_url}"),
-        TextContent(type="text", text="Click the link above to book."),
-    ]
+    return [TextContent(type="text", text=booking_url)]
 
 
 # =============================================================================
