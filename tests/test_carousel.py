@@ -65,10 +65,11 @@ def test_shows_open_closed_tags_only_when_open_now_is_known():
     assert ">Closed<" not in unknown
 
 
-def test_links_to_place_id_when_available_falls_back_to_a_text_search():
+def test_view_and_book_button_removed():
     html = build_carousel_html("Rome", SAMPLE)
-    assert "place/?q=place_id:abc123" in html
-    assert re.search(r"maps/search/\?api=1&amp;query=", html)
+    # View & Book button should not be present
+    assert "View &amp; book" not in html
+    assert 'class="book"' not in html
 
 
 def test_uses_the_emoji_placeholder_when_there_is_no_photo():
