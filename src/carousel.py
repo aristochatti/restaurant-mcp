@@ -109,7 +109,19 @@ def _card(r: dict[str, Any]) -> str:
         img = '<div class="photo ph">🍽️</div>'
 
     price_level = r.get("priceLevel")
-    price = "€" * price_level if price_level else ""
+    # Handle both numeric and string price levels (e.g., "$$" or 2)
+    if isinstance(price_level, (int, float)):
+        price = "€" * int(price_level) if price_level else ""
+    elif isinstance(price_level, str):
+        # Map common string formats to numeric
+        price_map = {"$": 1, "$$": 2, "$$$": 3, "$$$$": 4,
+                     "inexpensive": 1, "moderate": 2, "expensive": 3, "very_expensive": 4,
+                     "PRICE_LEVEL_INEXPENSIVE": 1, "PRICE_LEVEL_MODERATE": 2,
+                     "PRICE_LEVEL_EXPENSIVE": 3, "PRICE_LEVEL_VERY_EXPENSIVE": 4}
+        price_int = price_map.get(price_level.lower().strip("$ "), None)
+        price = "€" * price_int if price_int else ""
+    else:
+        price = ""
 
     open_now = r.get("openNow")
     if open_now is True:
