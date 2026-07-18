@@ -1,4 +1,4 @@
-# resto-mcp
+# resto-mcp 🍝
 
 MCP server that searches restaurants via **Google Places** and returns an interactive **mcp-ui** carousel. Streamable HTTP transport — ready for Mistral Le Chat / Alpic.
 
